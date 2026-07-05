@@ -31,11 +31,12 @@ import {
   shouldGenerateRecovery,
   systemicSupportFor,
   type EventMemory,
+  type MarketExportMode,
   type MarketHistoryPoint,
   type MarketRegime,
   type MarketStatus,
 } from "./lib/marketModel";
-import { generateMarketEvent, generatePublicReactionEvent, type NewsIntensity } from "./lib/newsEngine";
+import { generateDirectedMarketEvent, generateMarketEvent, generatePublicReactionEvent, type NewsIntensity } from "./lib/newsEngine";
 
 export type MarketPoint = {
   value: number;
@@ -285,7 +286,7 @@ function App() {
     const longSessionFactor = Math.min(1, sessionAgeMinutes / 30);
     const timedEvent = attachSimulatedTime(event);
     const activeEvent = timedEvent ? adjustEventForSimulation(timedEvent) : null;
-    const rawReactionEvent = activeEvent ? generatePublicReactionEvent(activeEvent) : null;
+    const rawReactionEvent = activeEvent ? generatePublicReactionEvent(activeEvent, recentEvents) : null;
     const reactionEvent = rawReactionEvent ? attachSimulatedTime(rawReactionEvent) : null;
     const institutionEvents = activeEvent ? [activeEvent, ...(reactionEvent ? [reactionEvent] : [])] : [];
     const statusEvents: MarketEvent[] = [];
@@ -476,7 +477,7 @@ function App() {
 
       return nextMarket;
     });
-  }, [adjustEventForSimulation, attachSimulatedTime, eventMemory, marketRegime, sessionStartedAt]);
+  }, [adjustEventForSimulation, attachSimulatedTime, eventMemory, marketRegime, recentEvents, sessionStartedAt]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -515,13 +516,22 @@ function App() {
         !feedPaused && recoveryCandidate && Math.random() > 1 - recoveryProbability
           ? createRecoveryEvent(recoveryCandidate.id)
           : !feedPaused && Math.random() < eventProbability
-            ? generateMarketEvent(adjustedIntensity)
+            ? generateDirectedMarketEvent(
+                {
+                  market,
+                  institutionsState,
+                  recentEvents,
+                  marketRegime,
+                  activeStorylinePhase: activeStoryline.phase,
+                },
+                adjustedIntensity,
+              )
             : null;
       applyMarketEvent(event);
     }, 2200);
 
     return () => window.clearInterval(interval);
-  }, [applyMarketEvent, feedPaused, market, marketRegime, newsIntensity, sessionStartedAt]);
+  }, [applyMarketEvent, feedPaused, institutionsState, market, marketRegime, newsIntensity, recentEvents, sessionStartedAt]);
 
   const selectedInstrument = useMemo(
     () => marketInstruments.find((instrument) => instrument.id === selectedInstrumentId) ?? marketInstruments[0],
@@ -550,7 +560,18 @@ function App() {
   };
 
   const generateEventNow = () => {
-    applyMarketEvent(generateMarketEvent(newsIntensity));
+    applyMarketEvent(
+      generateDirectedMarketEvent(
+        {
+          market,
+          institutionsState,
+          recentEvents,
+          marketRegime,
+          activeStorylinePhase: activeStoryline.phase,
+        },
+        newsIntensity,
+      ),
+    );
   };
 
   const copyText = (text: string) => {
@@ -571,17 +592,24 @@ function App() {
     fallbackCopy();
   };
 
-  const exportMarkdown = () => {
-    const markdown = exportSessionMarkdown({ market, institutionsState, events: recentEvents, marketStatus, marketRegime });
+  const exportMarkdown = (exportMode: MarketExportMode = "clean") => {
+    const markdown = exportSessionMarkdown({ market, institutionsState, events: recentEvents, marketStatus, marketRegime, exportMode });
     setExportPreview(markdown);
     copyText(markdown);
   };
 
-  const downloadExport = (format: "md" | "json") => {
+  const downloadExport = (format: "md" | "debug-md" | "json") => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const content =
-      format === "md"
-        ? exportSessionMarkdown({ market, institutionsState, events: recentEvents, marketStatus, marketRegime })
+      format === "md" || format === "debug-md"
+        ? exportSessionMarkdown({
+            market,
+            institutionsState,
+            events: recentEvents,
+            marketStatus,
+            marketRegime,
+            exportMode: format === "debug-md" ? "debug" : "clean",
+          })
         : JSON.stringify(
             {
               generatedAt: new Date().toISOString(),
@@ -596,11 +624,11 @@ function App() {
             null,
             2,
           );
-    const blob = new Blob([content], { type: format === "md" ? "text/markdown" : "application/json" });
+    const blob = new Blob([content], { type: format === "json" ? "application/json" : "text/markdown" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `corporate-market-session-${timestamp}.${format}`;
+    link.download = `corporate-market-session-${timestamp}.${format === "json" ? "json" : "md"}`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -626,8 +654,10 @@ function App() {
               <button onClick={() => setFeedPaused((current) => !current)}>
                 {feedPaused ? "Resume Feed" : "Pause Feed"}
               </button>
-              <button onClick={exportMarkdown}>Copy Market Log</button>
+              <button onClick={() => exportMarkdown("clean")}>Copy Market Log</button>
+              <button onClick={() => exportMarkdown("debug")}>Copy Debug Log</button>
               <button onClick={() => downloadExport("md")}>Download Markdown</button>
+              <button onClick={() => downloadExport("debug-md")}>Download Debug Markdown</button>
               <button onClick={() => downloadExport("json")}>Download JSON</button>
               <label>
                 Intensity

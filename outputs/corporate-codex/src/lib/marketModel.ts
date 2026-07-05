@@ -1,6 +1,7 @@
 import { institutions, marketInstruments, type Institution, type MarketInstrumentId } from "../data/entities";
 import type { EventTag, MarketEvent } from "../data/events";
 import type { MarketState, InstitutionState } from "../App";
+import { summarizeDirectorSession } from "../sim/director";
 
 export type CauseType =
   | "event"
@@ -922,6 +923,8 @@ const impactLines = (impacts: Record<string, number> | Partial<Record<MarketInst
     .map(([id, value]) => `  - ${id}: ${Number(value).toFixed(1)}%`)
     .join("\n");
 
+export type MarketExportMode = "clean" | "debug";
+
 export const exportSessionMarkdown = ({
   market,
   institutionsState,
@@ -929,6 +932,7 @@ export const exportSessionMarkdown = ({
   actorId,
   marketStatus,
   marketRegime = "NORMAL",
+  exportMode = "clean",
 }: {
   market: MarketState;
   institutionsState: InstitutionState;
@@ -936,20 +940,26 @@ export const exportSessionMarkdown = ({
   actorId?: MarketInstrumentId;
   marketStatus: string;
   marketRegime?: MarketRegime;
+  exportMode?: MarketExportMode;
 }) => {
   const relevantEvents = actorId ? events.filter((event) => event.involvedActors.includes(actorId)) : events;
+  const isDebugExport = exportMode === "debug";
   const generatedAt = new Date().toLocaleString();
   const orderedEvents = [...relevantEvents].sort((a, b) => (a.simulatedTimestamp ?? 0) - (b.simulatedTimestamp ?? 0));
+  const simulatedEvents = orderedEvents.filter((event) => event.simulatedLabel);
+  const simulatedTimeRange = simulatedEvents.length
+    ? `${simulatedEvents[0].simulatedLabel} -> ${simulatedEvents[simulatedEvents.length - 1].simulatedLabel}`
+    : "No simulated events recorded.";
   const currentMoves = marketInstruments.map((instrument) => {
     const point = market[instrument.id];
     const history = point.history.slice(-48);
     const first = history[0];
     const last = history[history.length - 1];
     const move = first && last ? safePercentChange(last.value, first.value, instrument.id, instrument.basePrice) : 0;
-    return { instrument, point, move };
+    return { instrument, point, move, latest: last };
   });
-  const winners = [...currentMoves].sort((a, b) => b.move - a.move).slice(0, 4);
-  const losers = [...currentMoves].sort((a, b) => a.move - b.move).slice(0, 4);
+  const winners = [...currentMoves].filter((item) => item.move > 0).sort((a, b) => b.move - a.move).slice(0, 4);
+  const losers = [...currentMoves].filter((item) => item.move < 0).sort((a, b) => a.move - b.move).slice(0, 4);
   const tagCounts = new Map<string, number>();
   const beneficiaryCounts = new Map<string, number>();
   for (const event of relevantEvents.slice(0, 80)) {
@@ -973,6 +983,22 @@ export const exportSessionMarkdown = ({
         : marketRegime === "DEGRADED_STABILITY"
           ? "Stabilized crisis plateau unless a new leak or transport failure breaks the range."
           : "Further Corridor 12-B pressure or a controlled de-escalation signal.";
+  const directorNotes = summarizeDirectorSession({
+    market,
+    institutionsState,
+    events: relevantEvents,
+    marketRegime,
+    activeStorylinePhase: activeStoryline.phase,
+    debug: isDebugExport,
+  });
+  const majorMovements = [...currentMoves]
+    .filter(({ latest }) => !!latest)
+    .sort((a, b) => Math.abs(b.move) - Math.abs(a.move))
+    .slice(0, 6)
+    .map(({ instrument, move, point, latest }) => {
+      const note = latest?.note ?? point.headline;
+      return `- ${instrument.id}: ${formatCappedPercent(move)} over current window; status ${point.marketStatus}; ${note}`;
+    });
 
   return [
     `# Corporate Codex Market Session`,
@@ -982,14 +1008,16 @@ export const exportSessionMarkdown = ({
     `Market regime: ${marketRegime}`,
     `Regime read: ${regimeDescription(marketRegime)}`,
     actorId ? `Scope: ${actorId}` : `Scope: all actors`,
-    orderedEvents.length
-      ? `Simulated time range: ${orderedEvents[0].simulatedLabel ?? "unlabeled"} -> ${orderedEvents[orderedEvents.length - 1].simulatedLabel ?? "unlabeled"}`
-      : `Simulated time range: no generated events`,
+    `Export mode: ${exportMode}`,
+    `Simulated time range: ${simulatedTimeRange}`,
     ``,
     `## What Happened`,
     summary,
     ``,
     `Likely next phase: ${likelyNextPhase}`,
+    ``,
+    `## Director Notes`,
+    ...directorNotes.map((note) => `- ${note}`),
     ``,
     `## Current Market Values`,
     ...marketInstruments.map((instrument) => {
@@ -1005,8 +1033,8 @@ export const exportSessionMarkdown = ({
     }),
     ``,
     `## Biggest Winners / Losers`,
-    `Winners: ${winners.map(({ instrument, move }) => `${instrument.id} ${formatCappedPercent(move)}`).join(", ")}`,
-    `Losers: ${losers.map(({ instrument, move }) => `${instrument.id} ${formatCappedPercent(move)}`).join(", ")}`,
+    `Winners: ${winners.length ? winners.map(({ instrument, move }) => `${instrument.id} ${formatCappedPercent(move)}`).join(", ") : "No positive movers."}`,
+    `Losers: ${losers.length ? losers.map(({ instrument, move }) => `${instrument.id} ${formatCappedPercent(move)}`).join(", ") : "No negative movers."}`,
     ``,
     `## Main Pressure Tags`,
     topTags.length ? topTags.map((tag) => `- ${tag}: ${tagCounts.get(tag)}`).join("\n") : "- none",
@@ -1032,6 +1060,8 @@ export const exportSessionMarkdown = ({
       `Category: ${event.category}`,
       event.phase ? `Phase: ${event.phase}` : "",
       event.marketRegime ? `Regime: ${event.marketRegime}` : "",
+      isDebugExport && event.semanticPattern ? `Semantic pattern: ${event.semanticPattern}` : "",
+      isDebugExport && event.noveltyScore !== undefined ? `Novelty score: ${event.noveltyScore.toFixed(2)}` : "",
       `Tags: ${event.tags.join(", ")}`,
       `Affected: ${event.involvedActors.join(", ")}`,
       event.triggeredCircuitBreaker ? `Circuit breaker: yes` : "",
@@ -1039,22 +1069,12 @@ export const exportSessionMarkdown = ({
       event.pricedInResponse ? `Priced-in response: yes` : "",
       `Impacts:`,
       impactLines(event.impacts) || "  - none",
-      event.marketStateNote ? `Market state: ${event.marketStateNote}` : "",
+      isDebugExport && event.marketStateNote ? `Market state: ${event.marketStateNote}` : "",
+      isDebugExport && event.directorNotes?.length ? `Director: ${event.directorNotes.join(" ")}` : "",
       event.publicReaction ? `Public reaction: ${event.publicReaction}` : "",
     ].filter(Boolean)),
     ``,
     `## Major Price Movements`,
-    ...marketInstruments.flatMap((instrument) => {
-      const history = market[instrument.id].history.slice(-48);
-      const first = history[0];
-      const last = history[history.length - 1];
-      if (!first || !last) return [];
-      const move = safePercentChange(last.value, first.value, instrument.id, instrument.basePrice);
-      if (Math.abs(move) < 2.5 && market[instrument.id].marketStatus === "NORMAL") return [];
-
-      return [
-        `- ${instrument.id}: ${formatCappedPercent(move)} over current window; status ${market[instrument.id].marketStatus}; last note: ${last.note}`,
-      ];
-    }),
+    ...(majorMovements.length ? majorMovements : ["- No current-window price movements recorded."]),
   ].join("\n");
 };

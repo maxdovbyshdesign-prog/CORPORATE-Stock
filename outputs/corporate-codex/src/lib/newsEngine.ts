@@ -19,6 +19,7 @@ import {
 import type { EventCategory, EventTag, InstitutionImpact, MarketEvent } from "../data/events";
 import { loreAtoms, type LoreAtom } from "./codexExtractor";
 import { activeStoryline } from "./marketModel";
+import { createDirectedMarketEvent, type EventDirectorContext } from "../sim/director";
 
 export type InstitutionMetrics = InstitutionImpact;
 
@@ -314,8 +315,28 @@ export const generatedItemToMarketEvent = (item: GeneratedNewsItem): MarketEvent
 export const generateMarketEvent = (intensity: NewsIntensity = "normal") =>
   generatedItemToMarketEvent(generateNewsItem(intensity));
 
-export const generatePublicReactionEvent = (parent: MarketEvent): MarketEvent | null => {
+export const USE_EVENT_DIRECTOR = true;
+
+export const generateDirectedMarketEvent = (context: Omit<EventDirectorContext, "intensity">, intensity: NewsIntensity = "normal") => {
+  if (!USE_EVENT_DIRECTOR) return generateMarketEvent(intensity);
+
+  return createDirectedMarketEvent({ ...context, intensity }) ?? generateMarketEvent(intensity);
+};
+
+export const generatePublicReactionEvent = (parent: MarketEvent, recentEvents: MarketEvent[] = []): MarketEvent | null => {
   if (parent.severity !== "material" || !parent.publicReaction) return null;
+  const family = parent.publicReactionFamily;
+  if (!family) return null;
+  const recentFamilyCount = family
+    ? recentEvents.slice(0, 12).filter((event) => event.publicReactionFamily === family).length
+    : 0;
+  const recentReactionEvents = recentEvents.slice(0, 8).filter((event) => event.category === "Public Reaction").length;
+  const exactPhraseCount = recentEvents
+    .slice(0, 18)
+    .filter((event) => event.category === "Public Reaction" && event.summary === parent.publicReaction).length;
+
+  const crossesSaturationStep = recentFamilyCount === 2 || recentFamilyCount === 5;
+  if (!crossesSaturationStep || recentReactionEvents > 0 || exactPhraseCount > 0) return null;
 
   const timestamp = Date.now() + 1;
   return {
@@ -336,5 +357,11 @@ export const generatePublicReactionEvent = (parent: MarketEvent): MarketEvent | 
     source: "PUBLIC NETWORK",
     timestamp,
     generated: true,
+    publicReactionFamily: family,
+    semanticPattern: family ? `PUBLIC:${family}` : "PUBLIC:reaction",
+    noveltyScore: family ? Math.max(0.35, 0.9 - recentFamilyCount * 0.18) : 0.8,
+    directorNotes: family
+      ? [`Public reaction family ${family} allowed; recent family count ${recentFamilyCount}.`]
+      : undefined,
   };
 };

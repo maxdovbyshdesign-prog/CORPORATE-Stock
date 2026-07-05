@@ -77,6 +77,10 @@ export type MarketEvent = {
   simulatedTimestamp?: number;
   simulatedLabel?: string;
   marketRegime?: string;
+  semanticPattern?: string;
+  noveltyScore?: number;
+  publicReactionFamily?: string;
+  directorNotes?: string[];
 };
 
 export const eventTemplates: MarketEvent[] = [
