@@ -965,6 +965,172 @@ const impactLines = (impacts: Record<string, number> | Partial<Record<MarketInst
 
 export type MarketExportMode = "clean" | "debug";
 
+type EventBasketDiagnostic = {
+  event: MarketEvent;
+  label: string;
+  positiveImpactSum: number;
+  negativeImpactSum: number;
+  netImpactSum: number;
+  positiveInstrumentCount: number;
+  negativeInstrumentCount: number;
+  flatInstrumentCount: number;
+  largestPositive?: { id: MarketInstrumentId; value: number };
+  largestNegative?: { id: MarketInstrumentId; value: number };
+};
+
+const DRIFT_WINDOW_SIZE = 20;
+const GREEN_DRIFT_AVERAGE_THRESHOLD = 0.1;
+const GREEN_DRIFT_WINNER_RATIO = 1.5;
+
+const formatSignedDiagnostic = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+
+const eventDiagnosticLabel = (event: MarketEvent) => event.semanticPattern ?? event.templateId ?? event.headline;
+
+const calculateEventBasketDiagnostic = (event: MarketEvent): EventBasketDiagnostic => {
+  const entries = marketInstruments.map((instrument) => ({
+    id: instrument.id,
+    value: Number((event.impacts[instrument.id] ?? 0).toFixed(2)),
+  }));
+  const positives = entries.filter(({ value }) => value > 0);
+  const negatives = entries.filter(({ value }) => value < 0);
+  const positiveImpactSum = positives.reduce((sum, { value }) => sum + value, 0);
+  const negativeImpactSum = negatives.reduce((sum, { value }) => sum + value, 0);
+  const largestPositive = [...positives].sort((a, b) => b.value - a.value)[0];
+  const largestNegative = [...negatives].sort((a, b) => a.value - b.value)[0];
+
+  return {
+    event,
+    label: eventDiagnosticLabel(event),
+    positiveImpactSum: Number(positiveImpactSum.toFixed(2)),
+    negativeImpactSum: Number(negativeImpactSum.toFixed(2)),
+    netImpactSum: Number((positiveImpactSum + negativeImpactSum).toFixed(2)),
+    positiveInstrumentCount: positives.length,
+    negativeInstrumentCount: negatives.length,
+    flatInstrumentCount: entries.length - positives.length - negatives.length,
+    largestPositive,
+    largestNegative,
+  };
+};
+
+const aggregateBasketDiagnostics = (diagnostics: EventBasketDiagnostic[]) => {
+  const netSum = diagnostics.reduce((sum, item) => sum + item.netImpactSum, 0);
+  const positiveSum = diagnostics.reduce((sum, item) => sum + item.positiveImpactSum, 0);
+  const negativeSum = diagnostics.reduce((sum, item) => sum + item.negativeImpactSum, 0);
+
+  return {
+    averageEventNet: diagnostics.length ? Number((netSum / diagnostics.length).toFixed(2)) : 0,
+    positiveSum: Number(positiveSum.toFixed(2)),
+    negativeSum: Number(negativeSum.toFixed(2)),
+    winnerCount: diagnostics.reduce((sum, item) => sum + item.positiveInstrumentCount, 0),
+    loserCount: diagnostics.reduce((sum, item) => sum + item.negativeInstrumentCount, 0),
+    flatCount: diagnostics.reduce((sum, item) => sum + item.flatInstrumentCount, 0),
+  };
+};
+
+const eventBasketDiagnosticLines = (diagnostic: EventBasketDiagnostic) => {
+  const largestPositive = diagnostic.largestPositive
+    ? `${diagnostic.largestPositive.id} ${formatSignedDiagnostic(diagnostic.largestPositive.value)}`
+    : "none";
+  const largestNegative = diagnostic.largestNegative
+    ? `${diagnostic.largestNegative.id} ${formatSignedDiagnostic(diagnostic.largestNegative.value)}`
+    : "none";
+
+  return [
+    `Event basket net: ${formatSignedDiagnostic(diagnostic.netImpactSum)}`,
+    `Positive instruments: ${diagnostic.positiveInstrumentCount}; negative instruments: ${diagnostic.negativeInstrumentCount}; flat instruments: ${diagnostic.flatInstrumentCount}`,
+    `Positive impact sum: ${formatSignedDiagnostic(diagnostic.positiveImpactSum)}; negative impact sum: ${formatSignedDiagnostic(diagnostic.negativeImpactSum)}`,
+    `Largest positive: ${largestPositive}`,
+    `Largest negative: ${largestNegative}`,
+  ];
+};
+
+const basketDriftDiagnostics = (
+  diagnostics: EventBasketDiagnostic[],
+  marketRegime: MarketRegime,
+  unresolvedItems: string[],
+) => {
+  const rolling = diagnostics.slice(-DRIFT_WINDOW_SIZE);
+  const rollingSummary = aggregateBasketDiagnostics(rolling);
+  const sessionSummary = aggregateBasketDiagnostics(diagnostics);
+  const greenDriftWarning =
+    rollingSummary.averageEventNet > GREEN_DRIFT_AVERAGE_THRESHOLD &&
+    rollingSummary.winnerCount > rollingSummary.loserCount * GREEN_DRIFT_WINNER_RATIO &&
+    marketRegime !== "RECOVERY" &&
+    unresolvedItems.length > 0;
+  const topPositive = [...rolling].sort((a, b) => b.netImpactSum - a.netImpactSum).slice(0, 5);
+  const topNegative = [...rolling].sort((a, b) => a.netImpactSum - b.netImpactSum).slice(0, 5);
+  const archetypeMap = new Map<string, { count: number; total: number }>();
+
+  for (const diagnostic of diagnostics) {
+    const current = archetypeMap.get(diagnostic.label) ?? { count: 0, total: 0 };
+    archetypeMap.set(diagnostic.label, {
+      count: current.count + 1,
+      total: Number((current.total + diagnostic.netImpactSum).toFixed(2)),
+    });
+  }
+
+  const archetypeSummary = [...archetypeMap.entries()]
+    .map(([label, value]) => ({
+      label,
+      count: value.count,
+      total: value.total,
+      average: Number((value.total / value.count).toFixed(2)),
+    }))
+    .sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
+    .slice(0, 10);
+
+  return {
+    rollingCount: rolling.length,
+    rollingSummary,
+    sessionSummary,
+    greenDriftWarning,
+    topPositive,
+    topNegative,
+    archetypeSummary,
+  };
+};
+
+const driftDirectorNoteLines = (diagnostics: ReturnType<typeof basketDriftDiagnostics>) => [
+  `Basket drift: rolling average event net ${formatSignedDiagnostic(diagnostics.rollingSummary.averageEventNet)} across last ${diagnostics.rollingCount} events.`,
+  `Basket drift: rolling winner/loser/flat counts ${diagnostics.rollingSummary.winnerCount} / ${diagnostics.rollingSummary.loserCount} / ${diagnostics.rollingSummary.flatCount}.`,
+  diagnostics.greenDriftWarning
+    ? `Green drift warning: yes - rolling event net is ${formatSignedDiagnostic(diagnostics.rollingSummary.averageEventNet)} while storyline remains unresolved.`
+    : "Green drift warning: no.",
+];
+
+const driftDiagnosticSectionLines = (diagnostics: ReturnType<typeof basketDriftDiagnostics>) => [
+  `## Debug Basket Drift Diagnostics`,
+  `Window size: ${DRIFT_WINDOW_SIZE} events`,
+  `Rolling average event net: ${formatSignedDiagnostic(diagnostics.rollingSummary.averageEventNet)}`,
+  `Rolling positive sum: ${formatSignedDiagnostic(diagnostics.rollingSummary.positiveSum)}`,
+  `Rolling negative sum: ${formatSignedDiagnostic(diagnostics.rollingSummary.negativeSum)}`,
+  `Rolling winner/loser/flat counts: ${diagnostics.rollingSummary.winnerCount} / ${diagnostics.rollingSummary.loserCount} / ${diagnostics.rollingSummary.flatCount}`,
+  `Session average event net: ${formatSignedDiagnostic(diagnostics.sessionSummary.averageEventNet)}`,
+  `Session positive sum: ${formatSignedDiagnostic(diagnostics.sessionSummary.positiveSum)}`,
+  `Session negative sum: ${formatSignedDiagnostic(diagnostics.sessionSummary.negativeSum)}`,
+  diagnostics.greenDriftWarning
+    ? `Green drift warning: yes - rolling event net is ${formatSignedDiagnostic(diagnostics.rollingSummary.averageEventNet)} across last ${diagnostics.rollingCount} events while storyline remains unresolved.`
+    : "Green drift warning: no.",
+  ``,
+  `### Top net-positive recent events`,
+  ...(diagnostics.topPositive.length
+    ? diagnostics.topPositive.map((item) => `- ${item.label}: ${formatSignedDiagnostic(item.netImpactSum)}`)
+    : ["- none"]),
+  ``,
+  `### Top net-negative recent events`,
+  ...(diagnostics.topNegative.length
+    ? diagnostics.topNegative.map((item) => `- ${item.label}: ${formatSignedDiagnostic(item.netImpactSum)}`)
+    : ["- none"]),
+  ``,
+  `### Archetype net impact summary`,
+  ...(diagnostics.archetypeSummary.length
+    ? diagnostics.archetypeSummary.map(
+        (item) => `- ${item.label}: count ${item.count}, avg net ${formatSignedDiagnostic(item.average)}, total ${formatSignedDiagnostic(item.total)}`,
+      )
+    : ["- none"]),
+  ``,
+];
+
 export const exportSessionMarkdown = ({
   market,
   institutionsState,
@@ -988,6 +1154,9 @@ export const exportSessionMarkdown = ({
   const isDebugExport = exportMode === "debug";
   const generatedAt = new Date().toLocaleString();
   const orderedEvents = [...relevantEvents].sort((a, b) => (a.simulatedTimestamp ?? 0) - (b.simulatedTimestamp ?? 0));
+  const eventDiagnostics = orderedEvents.map(calculateEventBasketDiagnostic);
+  const eventDiagnosticsById = new Map(eventDiagnostics.map((diagnostic) => [diagnostic.event.id, diagnostic]));
+  const driftDiagnostics = basketDriftDiagnostics(eventDiagnostics, marketRegime, activeStoryline.unresolved);
   const simulatedEvents = orderedEvents.filter((event) => event.simulatedLabel);
   const simulatedTimeRange = simulatedEvents.length
     ? `${simulatedEvents[0].simulatedLabel} -> ${simulatedEvents[simulatedEvents.length - 1].simulatedLabel}`
@@ -1063,6 +1232,7 @@ export const exportSessionMarkdown = ({
     ``,
     `## Director Notes`,
     ...directorNotes.map((note) => `- ${note}`),
+    ...(isDebugExport ? driftDirectorNoteLines(driftDiagnostics).map((note) => `- ${note}`) : []),
     ``,
     `## Current Market Values`,
     ...marketInstruments.map((instrument) => {
@@ -1116,6 +1286,7 @@ export const exportSessionMarkdown = ({
     `Beneficiaries: ${activeStoryline.beneficiaries.join(", ")}`,
     `Unresolved: ${activeStoryline.unresolved.join(", ")}`,
     ``,
+    ...(isDebugExport ? driftDiagnosticSectionLines(driftDiagnostics) : []),
     `## Market Timeline`,
     ...orderedEvents.slice(-60).flatMap((event) => [
       ``,
@@ -1136,6 +1307,7 @@ export const exportSessionMarkdown = ({
       event.pricedInResponse ? `Priced-in response: yes` : "",
       `Impacts:`,
       impactLines(event.impacts) || "  - none",
+      ...(isDebugExport ? eventBasketDiagnosticLines(eventDiagnosticsById.get(event.id) ?? calculateEventBasketDiagnostic(event)) : []),
       isDebugExport && event.marketStateNote ? `Market state: ${event.marketStateNote}` : "",
       isDebugExport && event.directorNotes?.length ? `Director: ${event.directorNotes.join(" ")}` : "",
       event.publicReaction ? `Public reaction: ${event.publicReaction}` : "",
