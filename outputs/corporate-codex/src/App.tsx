@@ -13,7 +13,11 @@ import {
   type InstitutionId,
   type MarketInstrumentId,
 } from "./data/entities";
-import type { InstitutionImpact, MarketEvent } from "./data/events";
+import { eventTemplates, type EventTag, type InstitutionImpact, type MarketEvent } from "./data/events";
+import { socialAccounts, type SocialPersonaType } from "./data/socialAccounts";
+import { socialTemplates, type SocialSentiment } from "./data/socialTemplates";
+import { storylineLanes, summarizeStorylineLanes } from "./data/storylineLanes";
+import { deriveActiveWorldStateModifier, worldStateModifiers } from "./data/worldStateModifiers";
 import {
   applyMeanReversion,
   activeStoryline,
@@ -190,6 +194,155 @@ const formatSimulatedLabel = (minutes: number) => {
     .padStart(2, "0")}`;
 };
 
+type DraftKind = "news" | "pulse" | "modifier";
+
+type LocalWorldPressureTest = {
+  id: string;
+  title: string;
+  summary: string;
+  affectedLanes: string[];
+  boostedSemanticPatterns: string[];
+  suppressedSemanticPatterns: string[];
+  boostedTags: string[];
+  remainingEvents: number;
+};
+
+type ContentDraft = {
+  kind: DraftKind;
+  semanticPattern: string;
+  headline: string;
+  body: string;
+  marketStateNote: string;
+  laneContext: string;
+  worldModifierContext: string;
+  reactionFamily: string;
+  personaType: string;
+  pulseText: string;
+  toneSentiment: string;
+  tags: string;
+  relatedActors: string;
+  modifierTitle: string;
+  modifierSummary: string;
+  affectedLanes: string;
+  boostedSemanticPatterns: string;
+  suppressedSemanticPatterns: string;
+  boostedTags: string;
+};
+
+const emptyContentDraft: ContentDraft = {
+  kind: "news",
+  semanticPattern: "",
+  headline: "",
+  body: "",
+  marketStateNote: "",
+  laneContext: "",
+  worldModifierContext: "",
+  reactionFamily: "",
+  personaType: "",
+  pulseText: "",
+  toneSentiment: "",
+  tags: "",
+  relatedActors: "",
+  modifierTitle: "",
+  modifierSummary: "",
+  affectedLanes: "",
+  boostedSemanticPatterns: "",
+  suppressedSemanticPatterns: "",
+  boostedTags: "",
+};
+
+const listFromDraft = (value: string) =>
+  value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const uniqueStrings = (values: Array<string | undefined>) => Array.from(new Set(values.filter((value): value is string => !!value))).sort();
+
+const operatorSemanticPatterns = uniqueStrings([
+  ...eventTemplates.flatMap((event) => [event.semanticPattern, event.templateId]),
+  ...storylineLanes.flatMap((lane) => lane.relatedPatterns),
+  ...worldStateModifiers.flatMap((modifier) => [
+    ...modifier.activationPatterns,
+    ...modifier.boostedSemanticPatterns,
+    ...modifier.suppressedSemanticPatterns,
+  ]),
+  ...socialTemplates.flatMap((template) => template.semanticPatterns ?? []),
+  "MARKET:ambient_note",
+]);
+
+const operatorLaneOptions = storylineLanes.map((lane) => ({ value: lane.title, label: lane.title, hint: lane.focus, id: lane.id }));
+const operatorLaneIdOptions = storylineLanes.map((lane) => ({ value: lane.id, label: `${lane.title} (${lane.id})` }));
+const operatorWorldPressureOptions = worldStateModifiers.map((modifier) => ({
+  value: modifier.title,
+  label: modifier.title,
+  hint: modifier.summary,
+  id: modifier.id,
+}));
+const operatorReactionFamilies = uniqueStrings([
+  ...socialTemplates.map((template) => template.family),
+  ...storylineLanes.flatMap((lane) => lane.reactionFamilies ?? []),
+]);
+const operatorPersonaOptions = uniqueStrings([
+  ...socialAccounts.map((account) => account.personaType),
+  ...socialTemplates.flatMap((template) => template.personaTypes ?? []),
+]);
+const operatorToneOptions = uniqueStrings([
+  ...socialAccounts.map((account) => account.tone),
+  ...socialTemplates.flatMap((template) => [...(template.tones ?? []), template.sentiment]),
+]);
+const operatorTagOptions = uniqueStrings([
+  ...eventTemplates.flatMap((event) => event.tags),
+  ...storylineLanes.flatMap((lane) => lane.relatedTags),
+  ...worldStateModifiers.flatMap((modifier) => [...modifier.activationTags, ...modifier.boostedTags]),
+  ...socialTemplates.flatMap((template) => template.tags),
+]);
+const operatorActorOptions = uniqueStrings([...marketInstruments.map((instrument) => instrument.id), ...institutions.map((institution) => institution.id)]);
+const eventTagSet = new Set(operatorTagOptions);
+const entityIdSet = new Set(operatorActorOptions);
+const marketInstrumentIdSet = new Set<string>(marketInstruments.map((instrument) => instrument.id));
+const socialSentiments: SocialSentiment[] = ["supportive", "critical", "fearful", "cynical", "bullish", "bearish", "polarizing", "neutral"];
+const socialPersonaTypes: SocialPersonaType[] = [
+  "settler",
+  "investor",
+  "contractor",
+  "analyst",
+  "institutional",
+  "psa_local",
+  "exex_holder",
+  "opsec_supporter",
+  "anti_corporate",
+  "carbon_aligned",
+  "logistics",
+  "industrial_worker",
+  "bot_or_promoted",
+];
+
+const isEventTag = (value: string): value is EventTag => eventTagSet.has(value);
+const isMarketInstrumentId = (value: string): value is MarketInstrumentId => marketInstrumentIdSet.has(value);
+const isEntityId = (value: string): value is MarketInstrumentId | InstitutionId => entityIdSet.has(value);
+const sentimentFromDraft = (value: string): SocialSentiment =>
+  socialSentiments.includes(value as SocialSentiment) ? (value as SocialSentiment) : "neutral";
+const personaFromDraft = (value: string): SocialPersonaType =>
+  socialPersonaTypes.includes(value as SocialPersonaType) ? (value as SocialPersonaType) : "analyst";
+const tagsFromDraft = (draft: ContentDraft) => listFromDraft(draft.tags).filter(isEventTag);
+const actorsFromDraft = (draft: ContentDraft) => {
+  const listed = listFromDraft(draft.relatedActors).filter(isEntityId);
+  const prefix = draft.semanticPattern.split(":")[0];
+  const inferred = isEntityId(prefix) ? [prefix] : [];
+  return Array.from(new Set([...listed, ...inferred]));
+};
+
+const loadContentDraft = (): ContentDraft => {
+  if (typeof window === "undefined") return emptyContentDraft;
+  try {
+    const saved = window.localStorage.getItem("corporate-content-draft");
+    return saved ? { ...emptyContentDraft, ...JSON.parse(saved) } : emptyContentDraft;
+  } catch {
+    return emptyContentDraft;
+  }
+};
+
 const simulatedSpacingFor = (event: MarketEvent | null, regime: MarketRegime) => {
   if (!event) return 4 + Math.floor(Math.random() * 8);
   const severityBase = event.severity === "material" ? 48 : event.severity === "warning" ? 22 : 9;
@@ -216,8 +369,14 @@ function App() {
   const [newsIntensity, setNewsIntensity] = useState<NewsIntensity>("normal");
   const [eventMemory, setEventMemory] = useState<EventMemory>({});
   const [publicPulsePosts, setPublicPulsePosts] = useState<SocialPost[]>([]);
-  const [sessionStartedAt] = useState(() => Date.now());
+  const [sessionStartedAt, setSessionStartedAt] = useState(() => Date.now());
   const [exportPreview, setExportPreview] = useState<string | null>(null);
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const [contentDraft, setContentDraft] = useState<ContentDraft>(loadContentDraft);
+  const [showDraftPreview, setShowDraftPreview] = useState(false);
+  const [localDraftEventIds, setLocalDraftEventIds] = useState<string[]>([]);
+  const [localPulsePostIds, setLocalPulsePostIds] = useState<string[]>([]);
+  const [localWorldPressure, setLocalWorldPressure] = useState<LocalWorldPressureTest | null>(null);
   const simulatedMinutesRef = useRef(219 * 1440 + 3 * 60 + 14);
   const [simulatedLabel, setSimulatedLabel] = useState(() => formatSimulatedLabel(simulatedMinutesRef.current));
 
@@ -226,6 +385,28 @@ function App() {
     () => classifyMarketRegime({ market, events: recentEvents, sessionAgeMinutes, institutionsState }),
     [institutionsState, market, recentEvents, sessionAgeMinutes],
   );
+  const laneSummary = useMemo(() => summarizeStorylineLanes([...recentEvents].reverse()), [recentEvents]);
+  const activeWorldModifier = useMemo(
+    () =>
+      deriveActiveWorldStateModifier({
+        recentEvents: recentEvents.slice().reverse(),
+        marketRegime,
+        psaEnforcementCapacity: institutionsState.PSA.enforcementCapacity,
+      }),
+    [institutionsState.PSA.enforcementCapacity, marketRegime, recentEvents],
+  );
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("corporate-content-draft", JSON.stringify(contentDraft));
+    } catch {
+      // Draft persistence is a convenience only; copy tools still work without it.
+    }
+  }, [contentDraft]);
+
+  useEffect(() => {
+    if (localWorldPressure && localWorldPressure.remainingEvents <= 0) setLocalWorldPressure(null);
+  }, [localWorldPressure]);
 
   const attachSimulatedTime = useCallback(
     (event: MarketEvent | null) => {
@@ -389,6 +570,9 @@ function App() {
     const statusEvents: MarketEvent[] = [];
 
     if (activeEvent) {
+      setLocalWorldPressure((current) =>
+        current ? { ...current, remainingEvents: Math.max(0, current.remainingEvents - 1) } : current,
+      );
       setEventMemory((current) => rememberEventTags(current, activeEvent));
       if (publicPulse.posts.length) {
         setPublicPulsePosts((current) =>
@@ -688,7 +872,26 @@ function App() {
     );
   };
 
-  const copyText = (text: string) => {
+  const resetSession = () => {
+    simulatedMinutesRef.current = 219 * 1440 + 3 * 60 + 14;
+    setSimulatedLabel(formatSimulatedLabel(simulatedMinutesRef.current));
+    setSessionStartedAt(Date.now());
+    setMarket(createInitialMarketState());
+    setInstitutionsState(createInitialInstitutionState());
+    setRecentEvents([generateMarketEvent("normal")]);
+    setEventMemory({});
+    setPublicPulsePosts([]);
+    setLocalDraftEventIds([]);
+    setLocalPulsePostIds([]);
+    setLocalWorldPressure(null);
+    setShowDraftPreview(false);
+    setExportPreview(null);
+    setFeedPaused(false);
+    setCopyNotice("Session reset");
+    window.setTimeout(() => setCopyNotice(null), 1600);
+  };
+
+  const copyText = (text: string, label?: string) => {
     const fallbackCopy = () => {
       const element = document.createElement("textarea");
       element.value = text;
@@ -700,39 +903,72 @@ function App() {
 
     if (navigator.clipboard) {
       void navigator.clipboard.writeText(text).catch(fallbackCopy);
-      return;
+    } else {
+      fallbackCopy();
     }
 
-    fallbackCopy();
+    if (label) {
+      setCopyNotice(label);
+      window.setTimeout(() => setCopyNotice(null), 1600);
+    }
+  };
+
+  const hasLocalTestContent = localDraftEventIds.length > 0 || localPulsePostIds.length > 0 || !!localWorldPressure;
+  const appendLocalTestExport = (markdown: string, exportMode: MarketExportMode) => {
+    if (!hasLocalTestContent) return markdown;
+
+    const warningLine = `LOCAL TEST CONTENT PRESENT: operator draft content is included in this session.`;
+    const withCleanWarning = markdown.replace(`Generated:`, `${warningLine}\n\nGenerated:`);
+    if (exportMode !== "debug") return withCleanWarning;
+
+    return [
+      withCleanWarning,
+      ``,
+      `## Local Test Sandbox Diagnostics`,
+      `- Local draft event ids: ${localDraftEventIds.join(", ") || "none"}`,
+      `- Local pulse post ids: ${localPulsePostIds.join(", ") || "none"}`,
+      localWorldPressure
+        ? `- Forced local world pressure: ${localWorldPressure.title} (${localWorldPressure.remainingEvents} events remaining, preview/display only)`
+        : `- Forced local world pressure: none`,
+      `- Permanent dictionaries mutated: no`,
+      `- Repo files written from browser: no`,
+    ].join("\n");
   };
 
   const exportMarkdown = (exportMode: MarketExportMode = "clean") => {
-    const markdown = exportSessionMarkdown({
-      market,
-      institutionsState,
-      events: recentEvents,
-      publicPulsePosts,
-      marketStatus,
-      marketRegime,
+    const markdown = appendLocalTestExport(
+      exportSessionMarkdown({
+        market,
+        institutionsState,
+        events: recentEvents,
+        publicPulsePosts,
+        marketStatus,
+        marketRegime,
+        exportMode,
+      }),
       exportMode,
-    });
+    );
     setExportPreview(markdown);
-    copyText(markdown);
+    copyText(markdown, exportMode === "debug" ? "Debug export copied" : "Clean export copied");
   };
 
   const downloadExport = (format: "md" | "debug-md" | "json") => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const exportMode: MarketExportMode = format === "debug-md" ? "debug" : "clean";
     const content =
       format === "md" || format === "debug-md"
-        ? exportSessionMarkdown({
-            market,
-            institutionsState,
-            events: recentEvents,
-            publicPulsePosts,
-            marketStatus,
-            marketRegime,
-            exportMode: format === "debug-md" ? "debug" : "clean",
-          })
+        ? appendLocalTestExport(
+            exportSessionMarkdown({
+              market,
+              institutionsState,
+              events: recentEvents,
+              publicPulsePosts,
+              marketStatus,
+              marketRegime,
+              exportMode,
+            }),
+            exportMode,
+          )
         : JSON.stringify(
             {
               generatedAt: new Date().toISOString(),
@@ -744,6 +980,11 @@ function App() {
               institutions: institutionsState,
               events: recentEvents,
               publicPulse: publicPulsePosts,
+              localTestSandbox: {
+                localDraftEventIds,
+                localPulsePostIds,
+                localWorldPressure,
+              },
             },
             null,
             2,
@@ -755,6 +996,200 @@ function App() {
     link.download = `corporate-market-session-${timestamp}.${format === "json" ? "json" : "md"}`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const updateDraft = (patch: Partial<ContentDraft>) => setContentDraft((current) => ({ ...current, ...patch }));
+  const appendDraftListValue = (
+    field: "tags" | "relatedActors" | "affectedLanes" | "boostedSemanticPatterns" | "suppressedSemanticPatterns" | "boostedTags",
+    value: string,
+  ) => {
+    if (!value) return;
+    setContentDraft((current) => {
+      const items = listFromDraft(current[field]);
+      if (items.includes(value)) return current;
+      return { ...current, [field]: [...items, value].join(", ") };
+    });
+  };
+
+  const draftPayload = () => {
+    if (contentDraft.kind === "pulse") {
+      return {
+        type: "publicPulseReactionDraft",
+        reactionFamily: contentDraft.reactionFamily.trim(),
+        suggestedHandleOrPersona: contentDraft.personaType.trim(),
+        text: contentDraft.pulseText.trim(),
+        toneOrSentiment: contentDraft.toneSentiment.trim(),
+        tags: listFromDraft(contentDraft.tags),
+        relatedActors: listFromDraft(contentDraft.relatedActors),
+      };
+    }
+
+    if (contentDraft.kind === "modifier") {
+      return {
+        type: "worldStateModifierDraft",
+        title: contentDraft.modifierTitle.trim(),
+        summary: contentDraft.modifierSummary.trim(),
+        affectedLanes: listFromDraft(contentDraft.affectedLanes),
+        boostedSemanticPatterns: listFromDraft(contentDraft.boostedSemanticPatterns),
+        suppressedSemanticPatterns: listFromDraft(contentDraft.suppressedSemanticPatterns),
+        boostedTags: listFromDraft(contentDraft.boostedTags),
+      };
+    }
+
+    return {
+      type: "newsSurfaceVariantDraft",
+      semanticPattern: contentDraft.semanticPattern.trim(),
+      headline: contentDraft.headline.trim(),
+      body: contentDraft.body.trim(),
+      marketStateNote: contentDraft.marketStateNote.trim(),
+      laneContext: contentDraft.laneContext.trim(),
+      worldStateModifierContext: contentDraft.worldModifierContext.trim(),
+      tags: listFromDraft(contentDraft.tags),
+      relatedActors: listFromDraft(contentDraft.relatedActors),
+    };
+  };
+
+  const draftIsValid = () => {
+    const draft = draftPayload();
+    if (draft.type === "publicPulseReactionDraft") return !!draft.reactionFamily && !!draft.text;
+    if (draft.type === "worldStateModifierDraft") return !!draft.title && !!draft.summary;
+    return !!draft.semanticPattern && !!draft.headline;
+  };
+
+  const draftTsSnippet = () => {
+    const draft = draftPayload();
+    if (draft.type === "publicPulseReactionDraft") {
+      return `// Public Pulse reaction draft\n${JSON.stringify(draft, null, 2)}`;
+    }
+    if (draft.type === "worldStateModifierDraft") {
+      return `// World-state modifier draft\n${JSON.stringify(draft, null, 2)}`;
+    }
+    return `// News surface variant draft\n${JSON.stringify(draft, null, 2)}`;
+  };
+
+  const copyDraft = (format: "json" | "ts") => {
+    if (!draftIsValid()) {
+      setCopyNotice("Draft needs required fields");
+      window.setTimeout(() => setCopyNotice(null), 1800);
+      return;
+    }
+
+    const content = format === "json" ? JSON.stringify(draftPayload(), null, 2) : draftTsSnippet();
+    copyText(content, format === "json" ? "Draft JSON copied" : "Draft TS snippet copied");
+  };
+
+  const testNewsDraftAsEvent = () => {
+    if (contentDraft.kind !== "news" || !draftIsValid()) {
+      setCopyNotice("News draft needs semantic pattern and headline");
+      window.setTimeout(() => setCopyNotice(null), 1800);
+      return;
+    }
+
+    const now = Date.now();
+    const actors = actorsFromDraft(contentDraft);
+    const prefix = contentDraft.semanticPattern.split(":")[0];
+    const impactActor = isMarketInstrumentId(prefix) ? prefix : "OCI";
+    const eventId = `local-test-news-${now}`;
+    const localEvent: MarketEvent = {
+      id: eventId,
+      category: "Market Note",
+      tags: tagsFromDraft(contentDraft).length ? tagsFromDraft(contentDraft) : ["public_visibility"],
+      headline: `[LOCAL TEST] ${contentDraft.headline.trim()}`,
+      summary: contentDraft.body.trim() || "LOCAL TEST: operator draft news event.",
+      involvedActors: actors.length ? actors : ["OCI"],
+      impacts: { [impactActor]: 0.01 },
+      institutionImpacts: {},
+      mediaSnippet: "LOCAL TEST DRAFT: temporary operator news event.",
+      publicReaction: "LOCAL TEST: draft event inserted by operator sandbox.",
+      severity: "notice",
+      source: "LOCAL TEST DRAFT",
+      timestamp: now,
+      generated: true,
+      semanticPattern: contentDraft.semanticPattern.trim(),
+      marketStateNote: [contentDraft.marketStateNote.trim(), "LOCAL TEST: operator draft."].filter(Boolean).join(" "),
+      surfaceContextNote: [
+        contentDraft.laneContext ? `LOCAL TEST lane context: ${contentDraft.laneContext}.` : "",
+        contentDraft.worldModifierContext ? `LOCAL TEST world pressure context: ${contentDraft.worldModifierContext}.` : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      directorNotes: ["LOCAL TEST DRAFT: one-off operator event; not part of permanent dictionaries."],
+    };
+
+    setLocalDraftEventIds((current) => [eventId, ...current].slice(0, 20));
+    applyMarketEvent(localEvent);
+    setCopyNotice("Local test event inserted");
+    window.setTimeout(() => setCopyNotice(null), 1800);
+  };
+
+  const addLocalPulsePost = () => {
+    if (contentDraft.kind !== "pulse" || !draftIsValid()) {
+      setCopyNotice("Pulse draft needs family and text");
+      window.setTimeout(() => setCopyNotice(null), 1800);
+      return;
+    }
+
+    const now = Date.now();
+    const postId = `local-test-pulse-${now}`;
+    const post: SocialPost = {
+      id: postId,
+      timestamp: new Date(now).toISOString(),
+      simulatedTime: simulatedLabel,
+      accountId: "local-test-draft",
+      handle: "@local_test_draft",
+      displayName: "Local Test Draft",
+      role: contentDraft.personaType || "operator draft persona",
+      origin: "LOCAL TEST",
+      text: `[LOCAL TEST] ${contentDraft.pulseText.trim()}`,
+      tags: listFromDraft(contentDraft.tags),
+      relatedActors: listFromDraft(contentDraft.relatedActors),
+      sentiment: sentimentFromDraft(contentDraft.toneSentiment),
+      intensity: 1,
+      personaType: personaFromDraft(contentDraft.personaType),
+      templateId: "LOCAL_TEST_DRAFT",
+      family: contentDraft.reactionFamily.trim(),
+      selectionScore: 0,
+      selectionNotes: ["LOCAL TEST DRAFT: manually inserted operator pulse post; scoring not used."],
+    };
+
+    setLocalPulsePostIds((current) => [postId, ...current].slice(0, 20));
+    setPublicPulsePosts((current) => [post, ...current].slice(0, 90));
+    setCopyNotice("Local pulse post added");
+    window.setTimeout(() => setCopyNotice(null), 1800);
+  };
+
+  const forceLocalWorldPressure = () => {
+    if (contentDraft.kind !== "modifier" || !draftIsValid()) {
+      setCopyNotice("Modifier draft needs title and summary");
+      window.setTimeout(() => setCopyNotice(null), 1800);
+      return;
+    }
+
+    setLocalWorldPressure({
+      id: `local-test-world-pressure-${Date.now()}`,
+      title: contentDraft.modifierTitle.trim(),
+      summary: contentDraft.modifierSummary.trim(),
+      affectedLanes: listFromDraft(contentDraft.affectedLanes),
+      boostedSemanticPatterns: listFromDraft(contentDraft.boostedSemanticPatterns),
+      suppressedSemanticPatterns: listFromDraft(contentDraft.suppressedSemanticPatterns),
+      boostedTags: listFromDraft(contentDraft.boostedTags),
+      remainingEvents: 8,
+    });
+    setCopyNotice("Local world pressure enabled");
+    window.setTimeout(() => setCopyNotice(null), 1800);
+  };
+
+  const clearLocalTests = () => {
+    const draftEventIds = new Set(localDraftEventIds);
+    const pulseIds = new Set(localPulsePostIds);
+    setRecentEvents((current) => current.filter((event) => !draftEventIds.has(event.id)));
+    setPublicPulsePosts((current) => current.filter((post) => !pulseIds.has(post.id) && !draftEventIds.has(post.relatedEventId ?? "")));
+    setLocalDraftEventIds([]);
+    setLocalPulsePostIds([]);
+    setLocalWorldPressure(null);
+    setShowDraftPreview(false);
+    setCopyNotice("Local tests cleared");
+    window.setTimeout(() => setCopyNotice(null), 1800);
   };
 
   return (
@@ -769,17 +1204,19 @@ function App() {
           <span className="status-pill status-green">{wallMarketStatus}</span>
           <span className="status-pill">{marketRegime.replace(/_/g, " ")}</span>
           <span className="status-pill">{simulatedLabel}</span>
+          {copyNotice ? <span className="status-pill copied">{copyNotice}</span> : null}
           <span className="status-pill">SIGNAL QUALITY: DEGRADED</span>
           <span className="status-pill warning">FLARE ACTIVITY: MODERATE</span>
           <details className="feed-menu">
             <summary>Feed</summary>
             <div>
-              <button onClick={generateEventNow}>Generate Event</button>
+              <button onClick={generateEventNow}>Step One Event</button>
               <button onClick={() => setFeedPaused((current) => !current)}>
                 {feedPaused ? "Resume Feed" : "Pause Feed"}
               </button>
-              <button onClick={() => exportMarkdown("clean")}>Copy Market Log</button>
-              <button onClick={() => exportMarkdown("debug")}>Copy Debug Log</button>
+              <button onClick={resetSession}>Reset Session</button>
+              <button onClick={() => exportMarkdown("clean")}>Copy Clean Export</button>
+              <button onClick={() => exportMarkdown("debug")}>Copy Debug Export</button>
               <button onClick={() => downloadExport("md")}>Download Markdown</button>
               <button onClick={() => downloadExport("debug-md")}>Download Debug Markdown</button>
               <button onClick={() => downloadExport("json")}>Download JSON</button>
@@ -828,6 +1265,17 @@ function App() {
         <small>{regimeDescription(marketRegime)}</small>
       </section>
 
+      <section className="operator-strip" aria-label="Operator tools status">
+        <span>EVENTS {recentEvents.length}</span>
+        <span>REGIME {marketRegime.replace(/_/g, " ")}</span>
+        <span>LANE {laneSummary.dominantLane?.title ?? "none"}</span>
+        <span>PRESSURE {activeWorldModifier?.modifier.title ?? "none"}</span>
+        {localWorldPressure ? (
+          <span className="local-test-status">LOCAL TEST WORLD PRESSURE: {localWorldPressure.title} / {localWorldPressure.remainingEvents}</span>
+        ) : null}
+        <span>{feedPaused ? "PAUSED" : "RUNNING"}</span>
+      </section>
+
       {exportPreview ? (
         <section className="export-preview" aria-label="Market history export">
           <div>
@@ -837,6 +1285,364 @@ function App() {
           <textarea readOnly value={exportPreview} />
         </section>
       ) : null}
+
+      <details className="content-draft-pad">
+        <summary>Content Draft Pad</summary>
+        <div className="draft-grid">
+          <label>
+            Draft type
+            <select value={contentDraft.kind} onChange={(event) => updateDraft({ kind: event.target.value as DraftKind })}>
+              <option value="news">News surface variant</option>
+              <option value="pulse">Public Pulse reaction</option>
+              <option value="modifier">World-state modifier</option>
+            </select>
+          </label>
+
+          {contentDraft.kind === "news" ? (
+            <>
+              <label>
+                Semantic pattern
+                <select value={contentDraft.semanticPattern} onChange={(event) => updateDraft({ semanticPattern: event.target.value })}>
+                  <option value="">Select semantic pattern</option>
+                  {operatorSemanticPatterns.map((pattern) => (
+                    <option key={pattern} value={pattern}>
+                      {pattern}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Headline
+                <input value={contentDraft.headline} onChange={(event) => updateDraft({ headline: event.target.value })} />
+              </label>
+              <label>
+                Body
+                <textarea value={contentDraft.body} onChange={(event) => updateDraft({ body: event.target.value })} />
+              </label>
+              <label>
+                Market state note
+                <textarea value={contentDraft.marketStateNote} onChange={(event) => updateDraft({ marketStateNote: event.target.value })} />
+              </label>
+              <label>
+                Lane context
+                <select value={contentDraft.laneContext} onChange={(event) => updateDraft({ laneContext: event.target.value })}>
+                  <option value="">No lane context</option>
+                  {operatorLaneOptions.map((lane) => (
+                    <option key={lane.id} value={lane.value}>
+                      {lane.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                World pressure context
+                <select value={contentDraft.worldModifierContext} onChange={(event) => updateDraft({ worldModifierContext: event.target.value })}>
+                  <option value="">No world pressure</option>
+                  {operatorWorldPressureOptions.map((modifier) => (
+                    <option key={modifier.id} value={modifier.value}>
+                      {modifier.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Tags
+                <input value={contentDraft.tags} onChange={(event) => updateDraft({ tags: event.target.value })} placeholder="public_visibility, logistics" />
+                <select value="" onChange={(event) => appendDraftListValue("tags", event.target.value)}>
+                  <option value="">Add known tag</option>
+                  {operatorTagOptions.map((tag) => (
+                    <option key={tag} value={tag}>
+                      {tag}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Related actors
+                <input value={contentDraft.relatedActors} onChange={(event) => updateDraft({ relatedActors: event.target.value })} placeholder="ANCHOR, PXB-X" />
+                <select value="" onChange={(event) => appendDraftListValue("relatedActors", event.target.value)}>
+                  <option value="">Add known actor</option>
+                  {operatorActorOptions.map((actor) => (
+                    <option key={actor} value={actor}>
+                      {actor}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : null}
+
+          {contentDraft.kind === "pulse" ? (
+            <>
+              <label>
+                Reaction family
+                <select value={contentDraft.reactionFamily} onChange={(event) => updateDraft({ reactionFamily: event.target.value })}>
+                  <option value="">Select reaction family</option>
+                  {operatorReactionFamilies.map((family) => (
+                    <option key={family} value={family}>
+                      {family}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Persona type
+                <select value={contentDraft.personaType} onChange={(event) => updateDraft({ personaType: event.target.value })}>
+                  <option value="">Select persona</option>
+                  {operatorPersonaOptions.map((persona) => (
+                    <option key={persona} value={persona}>
+                      {persona}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Text
+                <textarea value={contentDraft.pulseText} onChange={(event) => updateDraft({ pulseText: event.target.value })} />
+              </label>
+              <label>
+                Tone / sentiment
+                <select value={contentDraft.toneSentiment} onChange={(event) => updateDraft({ toneSentiment: event.target.value })}>
+                  <option value="">Select tone or sentiment</option>
+                  {operatorToneOptions.map((tone) => (
+                    <option key={tone} value={tone}>
+                      {tone}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Tags
+                <input value={contentDraft.tags} onChange={(event) => updateDraft({ tags: event.target.value })} placeholder="data_suppression, footage_leak" />
+                <select value="" onChange={(event) => appendDraftListValue("tags", event.target.value)}>
+                  <option value="">Add known tag</option>
+                  {operatorTagOptions.map((tag) => (
+                    <option key={tag} value={tag}>
+                      {tag}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Related actors
+                <input value={contentDraft.relatedActors} onChange={(event) => updateDraft({ relatedActors: event.target.value })} placeholder="SYNOPTIC, UNICOL" />
+                <select value="" onChange={(event) => appendDraftListValue("relatedActors", event.target.value)}>
+                  <option value="">Add known actor</option>
+                  {operatorActorOptions.map((actor) => (
+                    <option key={actor} value={actor}>
+                      {actor}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : null}
+
+          {contentDraft.kind === "modifier" ? (
+            <>
+              <label>
+                Title
+                <input value={contentDraft.modifierTitle} onChange={(event) => updateDraft({ modifierTitle: event.target.value })} />
+              </label>
+              <label>
+                Summary
+                <textarea value={contentDraft.modifierSummary} onChange={(event) => updateDraft({ modifierSummary: event.target.value })} />
+              </label>
+              <label>
+                Affected lanes
+                <input value={contentDraft.affectedLanes} onChange={(event) => updateDraft({ affectedLanes: event.target.value })} placeholder="relay-access-crisis, cargo-sovereignty-dispute" />
+                <select value="" onChange={(event) => appendDraftListValue("affectedLanes", event.target.value)}>
+                  <option value="">Add known lane</option>
+                  {operatorLaneIdOptions.map((lane) => (
+                    <option key={lane.value} value={lane.value}>
+                      {lane.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Boosted semantic patterns
+                <input value={contentDraft.boostedSemanticPatterns} onChange={(event) => updateDraft({ boostedSemanticPatterns: event.target.value })} />
+                <select value="" onChange={(event) => appendDraftListValue("boostedSemanticPatterns", event.target.value)}>
+                  <option value="">Add boosted pattern</option>
+                  {operatorSemanticPatterns.map((pattern) => (
+                    <option key={pattern} value={pattern}>
+                      {pattern}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Suppressed semantic patterns
+                <input value={contentDraft.suppressedSemanticPatterns} onChange={(event) => updateDraft({ suppressedSemanticPatterns: event.target.value })} />
+                <select value="" onChange={(event) => appendDraftListValue("suppressedSemanticPatterns", event.target.value)}>
+                  <option value="">Add suppressed pattern</option>
+                  {operatorSemanticPatterns.map((pattern) => (
+                    <option key={pattern} value={pattern}>
+                      {pattern}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Boosted tags
+                <input value={contentDraft.boostedTags} onChange={(event) => updateDraft({ boostedTags: event.target.value })} />
+                <select value="" onChange={(event) => appendDraftListValue("boostedTags", event.target.value)}>
+                  <option value="">Add known tag</option>
+                  {operatorTagOptions.map((tag) => (
+                    <option key={tag} value={tag}>
+                      {tag}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : null}
+        </div>
+        <details className="draft-reference">
+          <summary>Context dictionary</summary>
+          <div className="draft-reference-grid">
+            <section>
+              <h4>Semantic patterns</h4>
+              <ul>
+                {operatorSemanticPatterns.map((pattern) => (
+                  <li key={pattern}>{pattern}</li>
+                ))}
+              </ul>
+            </section>
+            <section>
+              <h4>Narrative lanes</h4>
+              <ul>
+                {operatorLaneOptions.map((lane) => (
+                  <li key={lane.id}>
+                    <strong>{lane.label}</strong>
+                    <span>{lane.hint}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+            <section>
+              <h4>World pressures</h4>
+              <ul>
+                {operatorWorldPressureOptions.map((modifier) => (
+                  <li key={modifier.id}>
+                    <strong>{modifier.label}</strong>
+                    <span>{modifier.hint}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+            <section>
+              <h4>Public Pulse families</h4>
+              <ul>
+                {operatorReactionFamilies.map((family) => (
+                  <li key={family}>{family}</li>
+                ))}
+              </ul>
+            </section>
+          </div>
+        </details>
+        <section className="local-test-sandbox" aria-label="Local test sandbox">
+          <div className="local-test-heading">
+            <div>
+              <strong>Local Test Sandbox</strong>
+              <p>Draft tests are temporary, browser-local, and do not write to the project or change permanent content dictionaries.</p>
+            </div>
+            <span>LOCAL TEST ONLY</span>
+          </div>
+          <div className="draft-actions">
+            <button onClick={() => setShowDraftPreview(true)}>Preview draft</button>
+            {contentDraft.kind === "news" ? <button onClick={testNewsDraftAsEvent}>Test as one-off event</button> : null}
+            {contentDraft.kind === "pulse" ? <button onClick={addLocalPulsePost}>Add local pulse post</button> : null}
+            {contentDraft.kind === "modifier" ? <button onClick={forceLocalWorldPressure}>Force local world pressure</button> : null}
+            <button onClick={clearLocalTests}>Clear local tests</button>
+          </div>
+          {showDraftPreview ? (
+            <article className="local-preview">
+              <span>LOCAL PREVIEW</span>
+              {contentDraft.kind === "news" ? (
+                <>
+                  <h3>{contentDraft.headline || "Untitled news draft"}</h3>
+                  <p>{contentDraft.body || "No body drafted yet."}</p>
+                  <dl>
+                    <div>
+                      <dt>Semantic pattern</dt>
+                      <dd>{contentDraft.semanticPattern || "none"}</dd>
+                    </div>
+                    <div>
+                      <dt>Lane context</dt>
+                      <dd>{contentDraft.laneContext || "none"}</dd>
+                    </div>
+                    <div>
+                      <dt>World pressure</dt>
+                      <dd>{contentDraft.worldModifierContext || "none"}</dd>
+                    </div>
+                    <div>
+                      <dt>Market note</dt>
+                      <dd>{contentDraft.marketStateNote || "none"}</dd>
+                    </div>
+                  </dl>
+                </>
+              ) : null}
+              {contentDraft.kind === "pulse" ? (
+                <>
+                  <h3>{contentDraft.personaType || "Draft persona"} / {contentDraft.reactionFamily || "reaction family"}</h3>
+                  <p>{contentDraft.pulseText || "No Public Pulse text drafted yet."}</p>
+                  <dl>
+                    <div>
+                      <dt>Tone / sentiment</dt>
+                      <dd>{contentDraft.toneSentiment || "none"}</dd>
+                    </div>
+                    <div>
+                      <dt>Tags</dt>
+                      <dd>{contentDraft.tags || "none"}</dd>
+                    </div>
+                    <div>
+                      <dt>Related actors</dt>
+                      <dd>{contentDraft.relatedActors || "none"}</dd>
+                    </div>
+                  </dl>
+                </>
+              ) : null}
+              {contentDraft.kind === "modifier" ? (
+                <>
+                  <h3>{contentDraft.modifierTitle || "Untitled world pressure draft"}</h3>
+                  <p>{contentDraft.modifierSummary || "No summary drafted yet."}</p>
+                  <dl>
+                    <div>
+                      <dt>Affected lanes</dt>
+                      <dd>{contentDraft.affectedLanes || "none"}</dd>
+                    </div>
+                    <div>
+                      <dt>Boosted patterns</dt>
+                      <dd>{contentDraft.boostedSemanticPatterns || "none"}</dd>
+                    </div>
+                    <div>
+                      <dt>Suppressed patterns</dt>
+                      <dd>{contentDraft.suppressedSemanticPatterns || "none"}</dd>
+                    </div>
+                    <div>
+                      <dt>Boosted tags</dt>
+                      <dd>{contentDraft.boostedTags || "none"}</dd>
+                    </div>
+                  </dl>
+                </>
+              ) : null}
+            </article>
+          ) : null}
+          {localWorldPressure ? (
+            <p className="local-test-note">
+              LOCAL TEST WORLD PRESSURE: {localWorldPressure.title} remains visible for {localWorldPressure.remainingEvents} generated events. This pass does not bias director selection.
+            </p>
+          ) : null}
+        </section>
+        <div className="draft-actions">
+          <button onClick={() => copyDraft("json")}>Copy JSON</button>
+          <button onClick={() => copyDraft("ts")}>Copy TS snippet</button>
+          <button onClick={() => setContentDraft({ ...emptyContentDraft, kind: contentDraft.kind })}>Clear draft</button>
+        </div>
+        <pre>{JSON.stringify(draftPayload(), null, 2)}</pre>
+      </details>
 
       <nav className="view-tabs" aria-label="Primary sections">
         <button className={activeView === "overview" ? "active" : ""} onClick={() => setActiveView("overview")}>
