@@ -1,5 +1,6 @@
 import { institutions, marketInstruments, type Institution, type MarketInstrumentId } from "../data/entities";
 import type { EventTag, MarketEvent } from "../data/events";
+import { classifyEventStorylineLanes, summarizeStorylineLanes } from "../data/storylineLanes";
 import type { MarketState, InstitutionState } from "../App";
 import { summarizeDirectorSession } from "../sim/director";
 import { summarizePublicPulse, type SocialPost } from "../sim/socialEngine";
@@ -1232,6 +1233,38 @@ const recoveryDiagnosticSectionLines = (diagnostics: EventBasketDiagnostic[]) =>
   ];
 };
 
+const formatLaneCount = (count: number) => (Number.isInteger(count) ? count.toFixed(0) : count.toFixed(1));
+
+const cleanNarrativeLaneLines = (summary: ReturnType<typeof summarizeStorylineLanes>) => [
+  `Active narrative lanes:`,
+  ...(summary.activeLanes.length
+    ? summary.activeLanes
+        .slice(0, 3)
+        .map(({ lane, status }) => `- ${lane.title} - ${status}`)
+    : ["- Corridor 12-B Licensing Dispute - active"]),
+];
+
+const narrativeLaneDiagnosticSectionLines = (summary: ReturnType<typeof summarizeStorylineLanes>, unresolvedItems: string[]) => [
+  `## Narrative Lane Diagnostics`,
+  `Dominant lane: ${summary.dominantLane?.title ?? "none"}`,
+  `Active lanes: ${summary.activeLanes.length ? summary.activeLanes.map(({ lane }) => lane.title).join(", ") : "none"}`,
+  `Unresolved pressure: ${unresolvedItems.join(", ") || "none"}`,
+  ``,
+  `### Lane counts`,
+  ...(summary.laneCounts.length
+    ? summary.laneCounts.map(({ lane, count }) => `- ${lane.title}: ${formatLaneCount(count)} events`)
+    : ["- none"]),
+  ``,
+  `### Top repeated lane/pattern pairs`,
+  ...(summary.topPatternPairs.length
+    ? summary.topPatternPairs.map(({ lane, pattern, count }) => `- ${lane.title} / ${pattern}: ${count}`)
+    : ["- none"]),
+  ``,
+  `### Recent lane transitions`,
+  ...(summary.recentTransitions.length ? summary.recentTransitions.map((transition) => `- ${transition}`) : ["- none"]),
+  ``,
+];
+
 export const exportSessionMarkdown = ({
   market,
   institutionsState,
@@ -1258,6 +1291,8 @@ export const exportSessionMarkdown = ({
   const eventDiagnostics = orderedEvents.map(calculateEventBasketDiagnostic);
   const eventDiagnosticsById = new Map(eventDiagnostics.map((diagnostic) => [diagnostic.event.id, diagnostic]));
   const driftDiagnostics = basketDriftDiagnostics(eventDiagnostics, marketRegime, activeStoryline.unresolved);
+  const narrativeLaneSummary = summarizeStorylineLanes(orderedEvents);
+  const eventById = new Map(orderedEvents.map((event) => [event.id, event]));
   const simulatedEvents = orderedEvents.filter((event) => event.simulatedLabel);
   const simulatedTimeRange = simulatedEvents.length
     ? `${simulatedEvents[0].simulatedLabel} -> ${simulatedEvents[simulatedEvents.length - 1].simulatedLabel}`
@@ -1331,6 +1366,8 @@ export const exportSessionMarkdown = ({
     ``,
     `Likely next phase: ${likelyNextPhase}`,
     ``,
+    ...cleanNarrativeLaneLines(narrativeLaneSummary),
+    ``,
     `## Director Notes`,
     ...directorNotes.map((note) => `- ${note}`),
     ...(isDebugExport ? driftDirectorNoteLines(driftDiagnostics).map((note) => `- ${note}`) : []),
@@ -1378,6 +1415,15 @@ export const exportSessionMarkdown = ({
               .map((post) => `${post.handle} -> ${post.relatedEventId ?? "ambient"}`)
               .join(", ") || "none"
           }`,
+          `- recent related lanes: ${
+            publicPulsePosts
+              .slice(0, 8)
+              .map((post) => {
+                const relatedEvent = post.relatedEventId ? eventById.get(post.relatedEventId) : undefined;
+                return relatedEvent ? `${post.handle} -> ${classifyEventStorylineLanes(relatedEvent).primaryLaneTitle}` : `${post.handle} -> ambient`;
+              })
+              .join(", ") || "none"
+          }`,
         ]
       : []),
     ``,
@@ -1388,6 +1434,7 @@ export const exportSessionMarkdown = ({
     `Beneficiaries: ${activeStoryline.beneficiaries.join(", ")}`,
     `Unresolved: ${activeStoryline.unresolved.join(", ")}`,
     ``,
+    ...(isDebugExport ? narrativeLaneDiagnosticSectionLines(narrativeLaneSummary, activeStoryline.unresolved) : []),
     ...(isDebugExport ? driftDiagnosticSectionLines(driftDiagnostics) : []),
     ...(isDebugExport ? recoveryDiagnosticSectionLines(eventDiagnostics) : []),
     `## Market Timeline`,
@@ -1401,6 +1448,7 @@ export const exportSessionMarkdown = ({
       `Category: ${event.category}`,
       event.phase ? `Phase: ${event.phase}` : "",
       event.marketRegime ? `Regime: ${event.marketRegime}` : "",
+      isDebugExport ? `Narrative lane: ${classifyEventStorylineLanes(event).primaryLaneTitle}` : "",
       isDebugExport && event.semanticPattern ? `Semantic pattern: ${event.semanticPattern}` : "",
       isDebugExport && event.noveltyScore !== undefined ? `Novelty score: ${event.noveltyScore.toFixed(2)}` : "",
       `Tags: ${event.tags.join(", ")}`,
