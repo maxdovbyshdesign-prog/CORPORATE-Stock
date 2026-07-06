@@ -717,9 +717,14 @@ export const createCircuitBreakerEvent = (
   };
 };
 
-const recoveryEventData: Record<MarketInstrumentId, Array<Pick<MarketEvent, "headline" | "summary" | "tags" | "impacts" | "source">>> = {
+const recoveryEventData: Record<
+  MarketInstrumentId,
+  Array<Pick<MarketEvent, "headline" | "summary" | "tags" | "impacts" | "source" | "templateId" | "semanticPattern">>
+> = {
   EXEX: [
     {
+      templateId: "RECOVERY:EXEX:investor_call",
+      semanticPattern: "RECOVERY:EXEX:investor_call",
       headline: "EXEX announces emergency investor call.",
       summary: "Management cited asset backing, legacy licenses, and alternate extraction routes.",
       tags: ["extraction", "legal_exposure", "resource_supply"],
@@ -727,6 +732,8 @@ const recoveryEventData: Record<MarketInstrumentId, Array<Pick<MarketEvent, "hea
       source: "EXEX PUBLIC AFFAIRS",
     },
     {
+      templateId: "RECOVERY:EXEX:alternate_line",
+      semanticPattern: "RECOVERY:EXEX:alternate_line",
       headline: "EXEX restores throughput through alternate extraction line.",
       summary: "Resource flow resumed outside the contested corridor while disclosure review continues.",
       tags: ["extraction", "pipeline", "resource_supply"],
@@ -734,11 +741,22 @@ const recoveryEventData: Record<MarketInstrumentId, Array<Pick<MarketEvent, "hea
       source: "HELLAS CAPITAL DESK",
     },
     {
+      templateId: "RECOVERY:EXEX:stabilization_buyback",
+      semanticPattern: "RECOVERY:EXEX:stabilization_buyback",
       headline: "EXEX board authorizes stabilization buyback.",
       summary: "The board framed the move as a response to distorted headline risk.",
       tags: ["legal_exposure", "public_visibility"],
       impacts: { EXEX: 1.0, OCI: -0.2 },
       source: "INNER WORLDS MARKET FEED",
+    },
+    {
+      templateId: "RECOVERY:EXEX:liability_call",
+      semanticPattern: "RECOVERY:EXEX:liability_call",
+      headline: "EXEX investor call narrows guidance after contractor-liability questions.",
+      summary: "The recovery call reduced immediate liquidity fear, but counsel flagged corridor indemnity and contractor-separation exposure.",
+      tags: ["extraction", "legal_exposure", "security_contract", "public_visibility"],
+      impacts: { EXEX: -0.4, OPSEC: -0.2, OCI: 0.3, "PXB-X": 0.1 },
+      source: "EXEX PUBLIC AFFAIRS",
     },
   ],
   OPSEC: [
@@ -759,6 +777,8 @@ const recoveryEventData: Record<MarketInstrumentId, Array<Pick<MarketEvent, "hea
   ],
   SYNOPTIC: [
     {
+      templateId: "RECOVERY:SYNOPTIC:redacted_stills",
+      semanticPattern: "RECOVERY:SYNOPTIC:redacted_stills",
       headline: "SYNOPTIC releases redacted corridor stills.",
       summary: "Verification desks treated the release as partial evidence control rather than full disclosure.",
       tags: ["footage_leak", "data_suppression", "public_visibility"],
@@ -766,11 +786,22 @@ const recoveryEventData: Record<MarketInstrumentId, Array<Pick<MarketEvent, "hea
       source: "SYNOPTIC ACCESS DESK",
     },
     {
+      templateId: "RECOVERY:SYNOPTIC:verification_contract",
+      semanticPattern: "RECOVERY:SYNOPTIC:verification_contract",
       headline: "SYNOPTIC secures government verification contract.",
       summary: "Strategic demand offset data-suppression accusations.",
       tags: ["footage_leak", "security_contract"],
       impacts: { SYNOPTIC: 1.4, ACSB: 0.3 },
       source: "HELLAS CAPITAL DESK",
+    },
+    {
+      templateId: "RECOVERY:SYNOPTIC:chain_of_custody_cost",
+      semanticPattern: "RECOVERY:SYNOPTIC:chain_of_custody_cost",
+      headline: "SYNOPTIC verification contract adds chain-of-custody liability reserve.",
+      summary: "New demand arrived with archive-audit costs and public questions about why complete passes were not released earlier.",
+      tags: ["footage_leak", "data_suppression", "legal_exposure", "public_visibility"],
+      impacts: { SYNOPTIC: -0.3, EXEX: -0.2, OCI: 0.3, HALCYON: 0.1 },
+      source: "SYNOPTIC ACCESS DESK",
     },
   ],
   LUMEN: [
@@ -807,6 +838,8 @@ const recoveryEventData: Record<MarketInstrumentId, Array<Pick<MarketEvent, "hea
   ],
   DOMUS: [
     {
+      templateId: "RECOVERY:DOMUS:oxygen_restoration",
+      semanticPattern: "RECOVERY:DOMUS:oxygen_restoration",
       headline: "DOMUS restores oxygen loop access after outage.",
       summary: "Service restoration stabilized the civilian infrastructure name after repeated outage headlines.",
       tags: ["habitat_failure", "reconstruction"],
@@ -814,15 +847,28 @@ const recoveryEventData: Record<MarketInstrumentId, Array<Pick<MarketEvent, "hea
       source: "DOMUS SERVICE BULLETIN",
     },
     {
+      templateId: "RECOVERY:DOMUS:emergency_procurement",
+      semanticPattern: "RECOVERY:DOMUS:emergency_procurement",
       headline: "PSA requests emergency habitat procurement.",
       summary: "Procurement visibility improved despite unresolved public trust damage.",
       tags: ["habitat_failure", "reconstruction", "psa"],
       impacts: { DOMUS: 1.2, HALCYON: 0.2 },
       source: "PSA EMERGENCY OFFICE",
     },
+    {
+      templateId: "RECOVERY:DOMUS:restoration_fragility",
+      semanticPattern: "RECOVERY:DOMUS:restoration_fragility",
+      headline: "DOMUS restoration notice exposes wider life-support dependency map.",
+      summary: "Oxygen access returned, but the service report showed multiple habitats sharing the same brittle backup chain.",
+      tags: ["habitat_failure", "reconstruction", "civilian_harm", "public_visibility"],
+      impacts: { DOMUS: -0.4, OCI: 0.4, HALCYON: 0.2, LUMEN: -0.1, EXEX: -0.1 },
+      source: "DOMUS SERVICE BULLETIN",
+    },
   ],
   "PXB-X": [
     {
+      templateId: "RECOVERY:PXB-X:resource_vein",
+      semanticPattern: "RECOVERY:PXB-X:resource_vein",
       headline: "High-grade Proxima resource vein confirmed below disputed belt.",
       summary: "Resource futures rallied as concentrate scarcity assumptions reset.",
       tags: ["resource_supply", "extraction"],
@@ -830,10 +876,21 @@ const recoveryEventData: Record<MarketInstrumentId, Array<Pick<MarketEvent, "hea
       source: "HELLAS CAPITAL DESK",
     },
     {
+      templateId: "RECOVERY:PXB-X:transfer_slot",
+      semanticPattern: "RECOVERY:PXB-X:transfer_slot",
       headline: "Anchorpoint clears priority transfer slot for Proxima concentrate.",
       summary: "Delivery confidence improved after transport desks confirmed outbound capacity.",
       tags: ["resource_supply", "transport", "logistics"],
       impacts: { "PXB-X": 1.0, ANCHOR: 0.8, EXEX: 0.4, CARBON: -0.4 },
+      source: "HELLAS CAPITAL DESK",
+    },
+    {
+      templateId: "RECOVERY:PXB-X:delivery_confidence_break",
+      semanticPattern: "RECOVERY:PXB-X:delivery_confidence_break",
+      headline: "PXB-X scarcity rally fades as delivery-confidence desk cuts route assumptions.",
+      summary: "Scarcity remained valuable, but transfer uncertainty and insurance haircuts overwhelmed the recovery bid.",
+      tags: ["resource_supply", "transport", "logistics", "insurance"],
+      impacts: { "PXB-X": -0.4, ANCHOR: -0.2, EXEX: -0.1, OCI: 0.3, CARBON: 0.1 },
       source: "HELLAS CAPITAL DESK",
     },
   ],
@@ -873,6 +930,8 @@ const recoveryEventData: Record<MarketInstrumentId, Array<Pick<MarketEvent, "hea
   ],
   ANCHOR: [
     {
+      templateId: "RECOVERY:ANCHOR:alternate_route",
+      semanticPattern: "RECOVERY:ANCHOR:alternate_route",
       headline: "Anchorpoint confirms alternate transfer route for Proxima shipments.",
       summary: "Freight desks treated route diversity as a partial repair to delivery confidence.",
       tags: ["transport", "logistics", "resource_supply"],
@@ -880,10 +939,21 @@ const recoveryEventData: Record<MarketInstrumentId, Array<Pick<MarketEvent, "hea
       source: "HELLAS CAPITAL DESK",
     },
     {
+      templateId: "RECOVERY:ANCHOR:hazard_normalization",
+      semanticPattern: "RECOVERY:ANCHOR:hazard_normalization",
       headline: "Anchorpoint hazard premium normalizes after cargo-window review.",
       summary: "Shipping capacity improved while insurers reduced immediate route-risk assumptions.",
       tags: ["transport", "insurance", "logistics"],
       impacts: { ANCHOR: 0.8, OCI: -0.4, HALCYON: -0.2, "PXB-X": 0.5 },
+      source: "INNER WORLDS MARKET FEED",
+    },
+    {
+      templateId: "RECOVERY:ANCHOR:punitive_hazard_premium",
+      semanticPattern: "RECOVERY:ANCHOR:punitive_hazard_premium",
+      headline: "Anchorpoint alternate route clears only at punitive hazard premiums.",
+      summary: "The corridor technically reopened, but freight insurance and reroute fees damaged the recovery read-through.",
+      tags: ["transport", "insurance", "logistics", "resource_supply"],
+      impacts: { ANCHOR: -0.3, "PXB-X": -0.2, HALCYON: 0.2, OCI: 0.2, EXEX: -0.1 },
       source: "INNER WORLDS MARKET FEED",
     },
   ],
@@ -895,6 +965,7 @@ export const createRecoveryEvent = (actorId: MarketInstrumentId): MarketEvent =>
 
   return {
     id: `recovery-${actorId}-${timestamp}-${Math.floor(Math.random() * 1000)}`,
+    templateId: template.templateId,
     category: "Market Note",
     tags: template.tags,
     headline: template.headline,
@@ -910,6 +981,7 @@ export const createRecoveryEvent = (actorId: MarketInstrumentId): MarketEvent =>
     triggeredRecovery: true,
     storylineId: activeStoryline.id,
     phase: "Countermeasure / Recovery",
+    semanticPattern: template.semanticPattern,
   };
 };
 
@@ -1131,6 +1203,35 @@ const driftDiagnosticSectionLines = (diagnostics: ReturnType<typeof basketDriftD
   ``,
 ];
 
+const recoveryDiagnosticSectionLines = (diagnostics: EventBasketDiagnostic[]) => {
+  const recoveryDiagnostics = diagnostics.filter((diagnostic) => diagnostic.event.triggeredRecovery);
+  const recoverySummary = aggregateBasketDiagnostics(recoveryDiagnostics);
+  const byActor = new Map<string, number>();
+  const topPositive = [...recoveryDiagnostics].sort((a, b) => b.netImpactSum - a.netImpactSum).slice(0, 5);
+  const topNegative = [...recoveryDiagnostics].sort((a, b) => a.netImpactSum - b.netImpactSum).slice(0, 5);
+
+  for (const diagnostic of recoveryDiagnostics) {
+    const primary = diagnostic.event.involvedActors[0] ?? "UNKNOWN";
+    byActor.set(primary, (byActor.get(primary) ?? 0) + 1);
+  }
+
+  return [
+    `## Recovery Event Diagnostics`,
+    `Recovery events in session: ${recoveryDiagnostics.length}`,
+    `Recovery events by actor: ${
+      byActor.size ? [...byActor.entries()].map(([actor, count]) => `${actor} ${count}`).join(", ") : "none"
+    }`,
+    `Recovery event average net: ${formatSignedDiagnostic(recoverySummary.averageEventNet)}`,
+    ``,
+    `### Top positive recovery events`,
+    ...(topPositive.length ? topPositive.map((item) => `- ${item.label}: ${formatSignedDiagnostic(item.netImpactSum)}`) : ["- none"]),
+    ``,
+    `### Top negative recovery events`,
+    ...(topNegative.length ? topNegative.map((item) => `- ${item.label}: ${formatSignedDiagnostic(item.netImpactSum)}`) : ["- none"]),
+    ``,
+  ];
+};
+
 export const exportSessionMarkdown = ({
   market,
   institutionsState,
@@ -1287,6 +1388,7 @@ export const exportSessionMarkdown = ({
     `Unresolved: ${activeStoryline.unresolved.join(", ")}`,
     ``,
     ...(isDebugExport ? driftDiagnosticSectionLines(driftDiagnostics) : []),
+    ...(isDebugExport ? recoveryDiagnosticSectionLines(eventDiagnostics) : []),
     `## Market Timeline`,
     ...orderedEvents.slice(-60).flatMap((event) => [
       ``,
