@@ -23,6 +23,8 @@ export type SocialPost = {
   visibility?: SocialVisibility;
   templateId?: string;
   family?: string;
+  selectionScore?: number;
+  selectionNotes?: string[];
 };
 
 export type PublicPulseResult = {
@@ -38,6 +40,7 @@ export type PublicPulseSummary = {
   topPersonaTypes: string[];
   topSentimentTags: string[];
   saturationContributions: string[];
+  selectionNotes: string[];
 };
 
 const marketIds = marketInstruments.map((instrument) => instrument.id);
@@ -86,6 +89,127 @@ const compactActor = (id: string) => {
 const eventActors = (event: MarketEvent): EntityId[] =>
   event.involvedActors.filter((id): id is EntityId => isMarketId(id) || isInstitutionId(id));
 
+const publicReactionFamilyAliases: Record<string, string[]> = {
+  "denial-fatigue": ["exex-denial"],
+  evidence: ["synoptic-evidence", "unicol-verified-access"],
+  "contractor-liability": ["opsec-muto"],
+  "insurance-cruelty": ["insurance-cruelty"],
+  "subscription-life": ["domus-tenant"],
+  pricing: ["lumen-pricing"],
+};
+
+const semanticFamilyAliases: Record<string, string[]> = {
+  EXEX: ["exex-denial"],
+  OPSEC: ["opsec-muto"],
+  ACSB: ["opsec-muto"],
+  HALCYON: ["insurance-cruelty"],
+  OCI: ["insurance-cruelty"],
+  DOMUS: ["domus-tenant"],
+  LUMEN: ["lumen-pricing"],
+  SYNOPTIC: ["synoptic-evidence"],
+  ANCHOR: ["anchor-logistics"],
+  PSA: ["psa-polarization"],
+  UNICOL: ["unicol-verified-access"],
+  CARBON: ["carbon-adoption"],
+};
+
+const visibilityTagHints: Record<SocialVisibility, EventTag[]> = {
+  local: ["civilian_harm", "habitat_failure", "verified_access", "psa"],
+  inner_worlds: ["public_visibility", "legal_exposure", "oversight", "data_suppression"],
+  investor_wire: ["resource_supply", "insurance", "transport", "safety_review", "legal_exposure"],
+  settlement_channel: ["civilian_harm", "habitat_failure", "communications", "verified_access", "psa"],
+  promoted: ["resource_supply", "fuel_competition", "security_contract"],
+};
+
+const eventFamilyAliases = (event: MarketEvent) => {
+  const families = new Set<string>();
+  for (const family of publicReactionFamilyAliases[event.publicReactionFamily ?? ""] ?? []) families.add(family);
+  const semanticActor = event.semanticPattern?.split(":")[0];
+  for (const family of semanticFamilyAliases[semanticActor ?? ""] ?? []) families.add(family);
+  return families;
+};
+
+const semanticFamiliesFor = (event: MarketEvent) => new Set(semanticFamilyAliases[event.semanticPattern?.split(":")[0] ?? ""] ?? []);
+const reactionFamiliesFor = (event: MarketEvent) => new Set(publicReactionFamilyAliases[event.publicReactionFamily ?? ""] ?? []);
+
+const countOverlap = <T,>(left: T[] = [], right: T[] = []) => left.reduce((sum, item) => sum + (right.includes(item) ? 1 : 0), 0);
+
+const templateMatchDetails = (template: SocialTemplate, event: MarketEvent) => {
+  const actors = eventActors(event);
+  const semanticFamilies = semanticFamiliesFor(event);
+  const reactionFamilies = reactionFamiliesFor(event);
+  const familyAliases = eventFamilyAliases(event);
+  const semanticMatch = !!event.semanticPattern && !!template.semanticPatterns?.includes(event.semanticPattern);
+  const semanticFamilyMatch = semanticFamilies.has(template.family);
+  const reactionFamilyMatch = reactionFamilies.has(template.family) || template.family === event.publicReactionFamily;
+  const familyMatch = semanticFamilyMatch || reactionFamilyMatch || familyAliases.has(template.family);
+  const actorOverlap = countOverlap(template.actors ?? [], actors);
+  const tagOverlap = countOverlap(template.tags, event.tags);
+  const visibility = template.visibility;
+  const visibilityFit = visibility ? countOverlap(visibilityTagHints[visibility], event.tags) > 0 : false;
+  const familyConflict = semanticFamilies.size > 0 && !semanticFamilyMatch && !reactionFamilyMatch && !semanticMatch;
+  const strongMatch =
+    semanticMatch ||
+    semanticFamilyMatch ||
+    reactionFamilyMatch ||
+    (!familyConflict && actorOverlap > 0 && tagOverlap > 0) ||
+    (!familyConflict && tagOverlap >= 2);
+
+  return {
+    semanticMatch,
+    familyMatch,
+    actorOverlap,
+    tagOverlap,
+    visibilityFit,
+    familyConflict,
+    strongMatch,
+  };
+};
+
+const templateSelectionScore = (template: SocialTemplate, event: MarketEvent) => {
+  const details = templateMatchDetails(template, event);
+  let score = 0;
+  if (details.semanticMatch) score += 5;
+  if (details.familyMatch) score += 4;
+  if (details.actorOverlap > 0) score += 3;
+  score += details.tagOverlap * 2;
+  if (details.visibilityFit) score += 1;
+  if (details.familyConflict) score -= 4;
+  if (!details.actorOverlap && !details.semanticMatch) score -= 3;
+  if (!details.tagOverlap) score -= 2;
+  return score;
+};
+
+const selectionNotesFor = (template: SocialTemplate, account: SocialAccount, event: MarketEvent, templateScore: number, accountScore: number) => {
+  const details = templateMatchDetails(template, event);
+  return [
+    `template ${template.id} ${template.family} score ${templateScore}`,
+    `account ${account.handle} score ${accountScore}`,
+    details.semanticMatch ? "semantic match" : "",
+    details.familyMatch ? "family match" : "",
+    details.actorOverlap ? `actor overlap ${details.actorOverlap}` : "",
+    details.tagOverlap ? `tag overlap ${details.tagOverlap}` : "",
+  ].filter(Boolean);
+};
+
+const weightedChoice = <T,>(items: Array<{ item: T; score: number }>) => {
+  const weighted = items.map(({ item, score }) => ({ item, weight: Math.max(1, score) }));
+  const total = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+  let cursor = Math.random() * total;
+  for (const entry of weighted) {
+    cursor -= entry.weight;
+    if (cursor <= 0) return entry.item;
+  }
+  return weighted[weighted.length - 1]?.item;
+};
+
+const topWeightedMatches = <T,>(items: T[], score: (item: T) => number, limit: number, minScore = 1) =>
+  items
+    .map((item) => ({ item, score: score(item) }))
+    .filter(({ score: itemScore }) => itemScore >= minScore)
+    .sort((a, b) => b.score - a.score + (Math.random() - 0.5) * 0.9)
+    .slice(0, limit);
+
 const scoreAccountForEvent = (account: SocialAccount, event: MarketEvent) => {
   const actors = eventActors(event);
   const tagScore = event.tags.reduce((sum, tag) => sum + (account.caresAboutTags.includes(tag) ? 2 : 0), 0);
@@ -95,14 +219,20 @@ const scoreAccountForEvent = (account: SocialAccount, event: MarketEvent) => {
   return tagScore + actorScore + trustScore + dislikeScore;
 };
 
-const scoreTemplateForEvent = (template: SocialTemplate, event: MarketEvent, account: SocialAccount) => {
+const scoreAccountForTemplate = (account: SocialAccount, template: SocialTemplate, event: MarketEvent) => {
   const actors = eventActors(event);
-  const tagScore = event.tags.reduce((sum, tag) => sum + (template.tags.includes(tag) ? 2 : 0), 0);
-  const actorScore = actors.reduce((sum, actor) => sum + (template.actors?.includes(actor) ? 3 : 0), 0);
-  const semanticScore = template.semanticPatterns?.includes(event.semanticPattern ?? "") ? 5 : 0;
-  const personaScore = template.personaTypes?.includes(account.personaType) ? 3 : 0;
+  const tagScore = countOverlap(account.caresAboutTags, event.tags) * 3;
+  const actorScore = actors.reduce((sum, actor) => sum + (account.preferredActors?.includes(actor) ? 3 : 0), 0);
+  const trustScore = actors.reduce((sum, actor) => sum + Math.max(0, account.trusts?.[actor] ?? 0), 0);
+  const dislikeScore = actors.reduce((sum, actor) => sum + Math.max(0, account.dislikes?.[actor] ?? 0), 0);
+  const personaScore = template.personaTypes?.includes(account.personaType) ? 4 : 0;
   const toneScore = template.tones?.includes(account.tone) ? 1 : 0;
-  return tagScore + actorScore + semanticScore + personaScore + toneScore;
+  const familyPreference = account.preferredFamilies?.includes(template.family) ? 3 : 0;
+  const semanticPreference =
+    event.semanticPattern && account.preferredSemanticPatterns?.includes(event.semanticPattern) ? 3 : 0;
+  const avoidedFamily = account.avoidedFamilies?.includes(template.family) ? 5 : 0;
+  const personaMismatch = template.personaTypes?.length && !template.personaTypes.includes(account.personaType) ? 5 : 0;
+  return tagScore + actorScore + trustScore + dislikeScore + personaScore + toneScore + familyPreference + semanticPreference - avoidedFamily - personaMismatch;
 };
 
 const recentAccountCount = (accountId: string, recentPosts: SocialPost[]) =>
@@ -161,14 +291,6 @@ const visibilityFor = (template: SocialTemplate, account: SocialAccount): Social
   return "inner_worlds";
 };
 
-const topMatches = <T,>(items: T[], score: (item: T) => number, limit: number) =>
-  items
-    .map((item) => ({ item, score: score(item) }))
-    .filter(({ score: itemScore }) => itemScore > 0)
-    .sort((a, b) => b.score - a.score + (Math.random() - 0.5) * 1.4)
-    .slice(0, limit)
-    .map(({ item }) => item);
-
 const socialInstitutionImpacts = (posts: SocialPost[]): Partial<Record<InstitutionId, InstitutionImpact>> => {
   if (!posts.length) return {};
   const has = (predicate: (post: SocialPost) => boolean) => posts.some(predicate);
@@ -213,32 +335,51 @@ export const generateSocialPostsForEvent = ({
   const desiredCount = postCountForEvent(event);
   if (!desiredCount) return { posts: [], institutionImpacts: {} };
 
-  const eligibleAccounts = topMatches(
-    socialAccounts.filter((account) => recentAccountCount(account.id, recentPosts) < 2),
-    (account) => scoreAccountForEvent(account, event),
-    14,
-  );
-  const accounts = eligibleAccounts.length ? eligibleAccounts : socialAccounts.slice(0, 10);
   const posts: SocialPost[] = [];
   const usedTemplates = new Set<string>();
   const usedAccounts = new Set<string>();
 
   for (let index = 0; index < desiredCount; index += 1) {
-    const accountPool = accounts.filter((account) => !usedAccounts.has(account.id));
-    const account = choice(accountPool.length ? accountPool : accounts);
-    const templatePool = topMatches(
+    const templatePool = topWeightedMatches(
       socialTemplates.filter(
         (template) =>
           !usedTemplates.has(template.id) &&
           recentTemplateFamilyCount(template.family, recentPosts) < 3 &&
-          (!template.personaTypes || template.personaTypes.includes(account.personaType)),
+          templateMatchDetails(template, event).strongMatch,
       ),
-      (template) => scoreTemplateForEvent(template, event, account),
+      (template) => templateSelectionScore(template, event),
       8,
+      4,
     );
-    const template = templatePool.length ? choice(templatePool) : undefined;
+    const template = weightedChoice(templatePool);
 
     if (!template) continue;
+
+    const templateScore = templateSelectionScore(template, event);
+    const accountCandidates = topWeightedMatches(
+      socialAccounts.filter(
+        (account) =>
+          !usedAccounts.has(account.id) &&
+          recentAccountCount(account.id, recentPosts) < 2 &&
+          (!template.personaTypes || template.personaTypes.includes(account.personaType)),
+      ),
+      (account) => scoreAccountForTemplate(account, template, event),
+      12,
+      2,
+    );
+    const fallbackAccountCandidates = accountCandidates.length
+      ? accountCandidates
+      : topWeightedMatches(
+          socialAccounts.filter((account) => !usedAccounts.has(account.id) && recentAccountCount(account.id, recentPosts) < 2),
+          (account) => scoreAccountForEvent(account, event),
+          8,
+          1,
+        );
+    const account = weightedChoice(fallbackAccountCandidates);
+
+    if (!account) continue;
+
+    const accountScore = scoreAccountForTemplate(account, template, event);
 
     usedAccounts.add(account.id);
     usedTemplates.add(template.id);
@@ -267,6 +408,8 @@ export const generateSocialPostsForEvent = ({
       visibility: visibilityFor(template, account),
       templateId: template.id,
       family: template.family,
+      selectionScore: templateScore + accountScore,
+      selectionNotes: selectionNotesFor(template, account, event, templateScore, accountScore),
     });
   }
 
@@ -306,6 +449,10 @@ export const summarizePublicPulse = (posts: SocialPost[] = []): PublicPulseSumma
   )
     .slice(0, 5)
     .map(([family, count]) => `${family}: ${count}`);
+  const selectionNotes = recent
+    .filter((post) => post.selectionNotes?.length)
+    .slice(0, 5)
+    .map((post) => `${post.handle}: ${(post.selectionNotes ?? []).join("; ")}`);
 
   return {
     dominantSentiment: sentiments[0] ? `${sentiments[0][0]} (${sentiments[0][1]})` : "quiet",
@@ -315,5 +462,6 @@ export const summarizePublicPulse = (posts: SocialPost[] = []): PublicPulseSumma
     topPersonaTypes: personaTypes,
     topSentimentTags: sentimentTags,
     saturationContributions,
+    selectionNotes,
   };
 };

@@ -39,6 +39,9 @@ export type SocialAccount = {
   dislikes?: Partial<Record<EntityId, number>>;
   caresAboutTags: EventTag[];
   preferredActors?: EntityId[];
+  preferredFamilies?: string[];
+  preferredSemanticPatterns?: string[];
+  avoidedFamilies?: string[];
 };
 
 export const socialAccounts: SocialAccount[] = [
@@ -53,6 +56,7 @@ export const socialAccounts: SocialAccount[] = [
     dislikes: { EXEX: 2, OPSEC: 2, DOMUS: 1 },
     caresAboutTags: ["civilian_harm", "habitat_failure", "public_visibility", "unicol", "verified_access"],
     preferredActors: ["DOMUS", "UNICOL", "PSA", "HALCYON"],
+    preferredFamilies: ["unicol-verified-access", "domus-tenant", "insurance-cruelty", "psa-polarization"],
   },
   {
     id: "domus-tenant",
@@ -65,6 +69,8 @@ export const socialAccounts: SocialAccount[] = [
     dislikes: { DOMUS: 3, HALCYON: 1 },
     caresAboutTags: ["habitat_failure", "reconstruction", "civilian_harm", "verified_access"],
     preferredActors: ["DOMUS", "PSA", "UNICOL"],
+    preferredFamilies: ["domus-tenant", "unicol-verified-access"],
+    avoidedFamilies: ["opsec-muto", "carbon-adoption"],
   },
   {
     id: "mars-foundry-shift",
@@ -77,6 +83,7 @@ export const socialAccounts: SocialAccount[] = [
     trusts: { EXEX: 1 },
     caresAboutTags: ["resource_supply", "extraction", "pipeline", "transport"],
     preferredActors: ["EXEX", "PXB-X", "ANCHOR", "CARBON"],
+    preferredFamilies: ["exex-denial", "anchor-logistics", "carbon-adoption"],
   },
   {
     id: "hellas-quant",
@@ -88,6 +95,7 @@ export const socialAccounts: SocialAccount[] = [
     tone: "finance",
     caresAboutTags: ["resource_supply", "insurance", "transport", "safety_review", "legal_exposure"],
     preferredActors: ["OCI", "PXB-X", "HALCYON", "CARBON", "ANCHOR"],
+    preferredFamilies: ["insurance-cruelty", "anchor-logistics", "carbon-adoption"],
   },
   {
     id: "exex-holder",
@@ -101,6 +109,8 @@ export const socialAccounts: SocialAccount[] = [
     dislikes: { PSA: 1, UNICOL: 1 },
     caresAboutTags: ["extraction", "resource_supply", "legal_exposure", "denial", "partial_admission"],
     preferredActors: ["EXEX", "PXB-X", "PSA"],
+    preferredFamilies: ["exex-denial", "anchor-logistics"],
+    preferredSemanticPatterns: ["EXEX:blanket_denial", "EXEX:investor_call", "EXEX:partial_telemetry_release"],
   },
   {
     id: "long-horizon-fund",
@@ -112,6 +122,7 @@ export const socialAccounts: SocialAccount[] = [
     tone: "finance",
     caresAboutTags: ["resource_supply", "transport", "safety_review", "insurance", "legal_exposure"],
     preferredActors: ["EXEX", "CARBON", "ANCHOR", "HALCYON"],
+    preferredFamilies: ["exex-denial", "insurance-cruelty", "anchor-logistics", "carbon-adoption"],
   },
   {
     id: "contractor-guy-87",
@@ -125,6 +136,8 @@ export const socialAccounts: SocialAccount[] = [
     dislikes: { UNICOL: 1, PSA: 1 },
     caresAboutTags: ["security_contract", "blackout", "communications", "oversight"],
     preferredActors: ["OPSEC", "ACSB", "LUMEN"],
+    preferredFamilies: ["opsec-muto", "lumen-pricing"],
+    avoidedFamilies: ["domus-tenant", "insurance-cruelty"],
   },
   {
     id: "free-colony-wire",
@@ -137,6 +150,7 @@ export const socialAccounts: SocialAccount[] = [
     dislikes: { EXEX: 3, OPSEC: 3, SYNOPTIC: 2, HALCYON: 2 },
     caresAboutTags: ["footage_leak", "data_suppression", "civilian_harm", "public_visibility", "legal_exposure"],
     preferredActors: ["SYNOPTIC", "EXEX", "OPSEC", "HALCYON"],
+    preferredFamilies: ["synoptic-evidence", "opsec-muto", "exex-denial", "insurance-cruelty"],
   },
   {
     id: "innerworlds-law",
@@ -148,6 +162,7 @@ export const socialAccounts: SocialAccount[] = [
     tone: "dry",
     caresAboutTags: ["legal_exposure", "oversight", "psa", "verified_access", "data_suppression"],
     preferredActors: ["PSA", "UNICOL", "EXEX", "OPSEC", "SYNOPTIC"],
+    preferredFamilies: ["psa-polarization", "unicol-verified-access", "synoptic-evidence", "opsec-muto", "exex-denial"],
   },
   {
     id: "psa-local-voice",
@@ -161,6 +176,7 @@ export const socialAccounts: SocialAccount[] = [
     dislikes: { OPSEC: 2, EXEX: 1 },
     caresAboutTags: ["psa", "legal_exposure", "verified_access", "civilian_harm"],
     preferredActors: ["PSA", "UNICOL", "EXEX", "OPSEC"],
+    preferredFamilies: ["psa-polarization", "unicol-verified-access", "opsec-muto"],
   },
   {
     id: "psa-taxpayer",
@@ -172,6 +188,7 @@ export const socialAccounts: SocialAccount[] = [
     tone: "cynical",
     caresAboutTags: ["psa", "civilian_harm", "habitat_failure", "public_visibility"],
     preferredActors: ["PSA", "DOMUS", "UNICOL"],
+    preferredFamilies: ["psa-polarization", "domus-tenant", "unicol-verified-access"],
   },
   {
     id: "carbon-realist",
@@ -185,6 +202,8 @@ export const socialAccounts: SocialAccount[] = [
     dislikes: { "PXB-X": 2, EXEX: 1 },
     caresAboutTags: ["fuel_competition", "safety_review", "resource_supply", "transport"],
     preferredActors: ["CARBON", "PXB-X", "ANCHOR"],
+    preferredFamilies: ["carbon-adoption", "anchor-logistics"],
+    avoidedFamilies: ["domus-tenant", "psa-polarization"],
   },
   {
     id: "anchor-desk-rat",
@@ -196,6 +215,7 @@ export const socialAccounts: SocialAccount[] = [
     tone: "dry",
     caresAboutTags: ["transport", "logistics", "communications", "resource_supply"],
     preferredActors: ["ANCHOR", "LUMEN", "PXB-X"],
+    preferredFamilies: ["anchor-logistics", "lumen-pricing"],
   },
   {
     id: "relay-night-shift",
@@ -207,6 +227,8 @@ export const socialAccounts: SocialAccount[] = [
     tone: "cynical",
     caresAboutTags: ["communications", "blackout", "flare", "public_visibility"],
     preferredActors: ["LUMEN", "UNICOL", "PSA"],
+    preferredFamilies: ["lumen-pricing", "unicol-verified-access", "psa-polarization"],
+    avoidedFamilies: ["domus-tenant", "insurance-cruelty"],
   },
   {
     id: "risk-premium-ghoul",
@@ -218,6 +240,7 @@ export const socialAccounts: SocialAccount[] = [
     tone: "finance",
     caresAboutTags: ["insurance", "civilian_harm", "legal_exposure", "habitat_failure"],
     preferredActors: ["HALCYON", "OCI", "DOMUS"],
+    preferredFamilies: ["insurance-cruelty", "domus-tenant"],
   },
   {
     id: "halcyon-policyholder",
@@ -230,6 +253,8 @@ export const socialAccounts: SocialAccount[] = [
     dislikes: { HALCYON: 3 },
     caresAboutTags: ["insurance", "civilian_harm", "public_visibility", "communications"],
     preferredActors: ["HALCYON", "OCI", "UNICOL"],
+    preferredFamilies: ["insurance-cruelty", "unicol-verified-access", "lumen-pricing"],
+    avoidedFamilies: ["carbon-adoption", "anchor-logistics"],
   },
   {
     id: "synoptic-archivist",
@@ -241,6 +266,8 @@ export const socialAccounts: SocialAccount[] = [
     tone: "dry",
     caresAboutTags: ["data_suppression", "footage_leak", "verified_access", "legal_exposure"],
     preferredActors: ["SYNOPTIC", "UNICOL", "EXEX"],
+    preferredFamilies: ["synoptic-evidence", "unicol-verified-access", "exex-denial"],
+    preferredSemanticPatterns: ["SYNOPTIC:archive_discrepancy", "SYNOPTIC:redacted_stills_release"],
   },
   {
     id: "proxima-forward-curve",
@@ -252,6 +279,7 @@ export const socialAccounts: SocialAccount[] = [
     tone: "finance",
     caresAboutTags: ["resource_supply", "transport", "safety_review", "pipeline"],
     preferredActors: ["PXB-X", "EXEX", "ANCHOR", "CARBON"],
+    preferredFamilies: ["anchor-logistics", "carbon-adoption", "exex-denial"],
   },
   {
     id: "mutowatch",
@@ -264,6 +292,9 @@ export const socialAccounts: SocialAccount[] = [
     dislikes: { OPSEC: 3, ACSB: 2 },
     caresAboutTags: ["security_contract", "oversight", "footage_leak", "public_visibility"],
     preferredActors: ["OPSEC", "ACSB", "SYNOPTIC"],
+    preferredFamilies: ["opsec-muto", "synoptic-evidence"],
+    preferredSemanticPatterns: ["OPSEC:muto_feed_leak", "OPSEC:oversight_liability"],
+    avoidedFamilies: ["domus-tenant", "insurance-cruelty", "anchor-logistics"],
   },
   {
     id: "boardroom-sim",
@@ -275,6 +306,7 @@ export const socialAccounts: SocialAccount[] = [
     tone: "propaganda",
     caresAboutTags: ["resource_supply", "security_contract", "fuel_competition"],
     preferredActors: ["EXEX", "OPSEC", "CARBON"],
+    preferredFamilies: ["exex-denial", "opsec-muto", "carbon-adoption"],
   },
   {
     id: "unicol-field-note",
@@ -287,6 +319,7 @@ export const socialAccounts: SocialAccount[] = [
     trusts: { UNICOL: 2 },
     caresAboutTags: ["unicol", "verified_access", "civilian_harm", "communications"],
     preferredActors: ["UNICOL", "PSA", "LUMEN"],
+    preferredFamilies: ["unicol-verified-access", "psa-polarization", "lumen-pricing"],
   },
   {
     id: "settlement-shift-cook",
@@ -298,6 +331,8 @@ export const socialAccounts: SocialAccount[] = [
     tone: "local",
     caresAboutTags: ["habitat_failure", "civilian_harm", "communications", "reconstruction"],
     preferredActors: ["DOMUS", "LUMEN", "UNICOL"],
+    preferredFamilies: ["domus-tenant", "lumen-pricing", "unicol-verified-access"],
+    avoidedFamilies: ["opsec-muto", "carbon-adoption"],
   },
   {
     id: "frontier-security-index",
@@ -310,6 +345,7 @@ export const socialAccounts: SocialAccount[] = [
     trusts: { OPSEC: 1, ACSB: 1 },
     caresAboutTags: ["security_contract", "blackout", "communications", "oversight"],
     preferredActors: ["OPSEC", "ACSB", "SYNOPTIC"],
+    preferredFamilies: ["opsec-muto", "synoptic-evidence"],
   },
   {
     id: "legacy-grid-union",
@@ -322,6 +358,7 @@ export const socialAccounts: SocialAccount[] = [
     trusts: { CARBON: 1 },
     caresAboutTags: ["fuel_competition", "safety_review", "resource_supply"],
     preferredActors: ["CARBON", "PXB-X"],
+    preferredFamilies: ["carbon-adoption"],
   },
   {
     id: "corridor-12b-map",
@@ -333,6 +370,7 @@ export const socialAccounts: SocialAccount[] = [
     tone: "dry",
     caresAboutTags: ["data_suppression", "verified_access", "transport", "civilian_harm"],
     preferredActors: ["SYNOPTIC", "UNICOL", "ANCHOR", "PSA"],
+    preferredFamilies: ["synoptic-evidence", "unicol-verified-access", "anchor-logistics", "psa-polarization"],
   },
   {
     id: "quiet-capital",
@@ -344,6 +382,7 @@ export const socialAccounts: SocialAccount[] = [
     tone: "finance",
     caresAboutTags: ["insurance", "legal_exposure", "transport", "safety_review"],
     preferredActors: ["OCI", "HALCYON", "CARBON", "ANCHOR"],
+    preferredFamilies: ["insurance-cruelty", "anchor-logistics", "carbon-adoption"],
   },
   {
     id: "extraction-spouse",
@@ -356,6 +395,7 @@ export const socialAccounts: SocialAccount[] = [
     trusts: { EXEX: 1 },
     caresAboutTags: ["extraction", "pipeline", "civilian_harm", "public_visibility"],
     preferredActors: ["EXEX", "UNICOL", "PSA"],
+    preferredFamilies: ["exex-denial", "unicol-verified-access", "psa-polarization"],
   },
   {
     id: "license-maximalist",
@@ -368,6 +408,8 @@ export const socialAccounts: SocialAccount[] = [
     trusts: { EXEX: 1 },
     caresAboutTags: ["legal_exposure", "extraction", "psa", "partial_admission"],
     preferredActors: ["EXEX", "PSA"],
+    preferredFamilies: ["exex-denial", "psa-polarization"],
+    preferredSemanticPatterns: ["EXEX:blanket_denial", "EXEX:partial_telemetry_release", "EXEX:investor_call"],
   },
   {
     id: "oxygen-ledger",
@@ -380,6 +422,9 @@ export const socialAccounts: SocialAccount[] = [
     dislikes: { DOMUS: 3 },
     caresAboutTags: ["habitat_failure", "reconstruction", "verified_access", "public_visibility"],
     preferredActors: ["DOMUS", "PSA", "UNICOL"],
+    preferredFamilies: ["domus-tenant", "unicol-verified-access", "psa-polarization"],
+    preferredSemanticPatterns: ["DOMUS:verified_restoration", "DOMUS:service_interruption"],
+    avoidedFamilies: ["opsec-muto", "carbon-adoption", "anchor-logistics"],
   },
   {
     id: "civilian-route-clerk",
@@ -392,5 +437,6 @@ export const socialAccounts: SocialAccount[] = [
     trusts: { PSA: 1 },
     caresAboutTags: ["psa", "verified_access", "transport", "civilian_harm"],
     preferredActors: ["PSA", "UNICOL", "ANCHOR"],
+    preferredFamilies: ["psa-polarization", "unicol-verified-access", "anchor-logistics"],
   },
 ];

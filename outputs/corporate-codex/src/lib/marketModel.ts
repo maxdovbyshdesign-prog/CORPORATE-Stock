@@ -1371,6 +1371,7 @@ export const exportSessionMarkdown = ({
           `- top persona types: ${publicPulseSummary.topPersonaTypes.join(", ") || "none"}`,
           `- top sentiment tags: ${publicPulseSummary.topSentimentTags.join(", ") || "none"}`,
           `- saturation contributions: ${publicPulseSummary.saturationContributions.join(", ") || "none"}`,
+          `- selection notes: ${publicPulseSummary.selectionNotes.join(" | ") || "none"}`,
           `- recent related events: ${
             publicPulsePosts
               .slice(0, 8)
