@@ -193,7 +193,12 @@ const formatSimulatedLabel = (minutes: number) => {
 const simulatedSpacingFor = (event: MarketEvent | null, regime: MarketRegime) => {
   if (!event) return 4 + Math.floor(Math.random() * 8);
   const severityBase = event.severity === "material" ? 48 : event.severity === "warning" ? 22 : 9;
-  const regimeBase = regime === "PANIC" ? 18 : regime === "DEGRADED_STABILITY" || regime === "POST_CRISIS_PLATEAU" ? 34 : 0;
+  const regimeBase =
+    regime === "PANIC"
+      ? 18
+      : regime === "DEGRADED_STABILITY" || regime === "POST_CRISIS_PLATEAU" || regime === "MANAGED_PLATEAU"
+        ? 34
+        : 0;
   const categoryBase = event.category === "Public Reaction" ? 6 : event.category === "Market Note" ? -4 : 0;
   return Math.max(4, severityBase + regimeBase + categoryBase + Math.floor(Math.random() * 18));
 };
@@ -218,8 +223,8 @@ function App() {
 
   const sessionAgeMinutes = (Date.now() - sessionStartedAt) / 60000;
   const marketRegime = useMemo(
-    () => classifyMarketRegime({ market, events: recentEvents, sessionAgeMinutes }),
-    [market, recentEvents, sessionAgeMinutes],
+    () => classifyMarketRegime({ market, events: recentEvents, sessionAgeMinutes, institutionsState }),
+    [institutionsState, market, recentEvents, sessionAgeMinutes],
   );
 
   const attachSimulatedTime = useCallback(
@@ -340,12 +345,17 @@ function App() {
         notes.push("Panic regime damped raw event impact to avoid runaway liquidation.");
       }
 
-      if (marketRegime === "DEGRADED_STABILITY" || marketRegime === "POST_CRISIS_PLATEAU") {
+      if (marketRegime === "DEGRADED_STABILITY" || marketRegime === "POST_CRISIS_PLATEAU" || marketRegime === "MANAGED_PLATEAU") {
         for (const id of Object.keys(impacts) as MarketInstrumentId[]) {
           const support = systemicSupportFor(id);
-          if (impacts[id]! < 0) impacts[id] = Number((impacts[id]! * (0.68 + (1 - support) * 0.18)).toFixed(2));
+          const factor = 0.68 + (1 - support) * 0.18;
+          impacts[id] = Number((impacts[id]! * factor).toFixed(2));
         }
-        notes.push("Degraded stability regime reduced repetitive downside for systemic actors.");
+        notes.push(
+          marketRegime === "MANAGED_PLATEAU"
+            ? "Managed plateau compressed repetitive event impact in both directions."
+            : "Degraded stability regime compressed repetitive event impact in both directions.",
+        );
       }
 
       return {
@@ -590,7 +600,10 @@ function App() {
         );
       });
       const adjustedIntensity: NewsIntensity =
-        marketRegime === "PANIC" || marketRegime === "DEGRADED_STABILITY" || marketRegime === "POST_CRISIS_PLATEAU"
+        marketRegime === "PANIC" ||
+        marketRegime === "DEGRADED_STABILITY" ||
+        marketRegime === "POST_CRISIS_PLATEAU" ||
+        marketRegime === "MANAGED_PLATEAU"
           ? Math.random() > 0.35
             ? "low"
             : "normal"
@@ -600,7 +613,7 @@ function App() {
               ? "low"
               : newsIntensity;
       const eventProbability =
-        marketRegime === "POST_CRISIS_PLATEAU"
+        marketRegime === "POST_CRISIS_PLATEAU" || marketRegime === "MANAGED_PLATEAU"
           ? 0.38
           : marketRegime === "DEGRADED_STABILITY"
             ? 0.48
@@ -608,7 +621,11 @@ function App() {
               ? 0.54
               : 0.72;
       const recoveryProbability =
-        marketRegime === "RECOVERY" || marketRegime === "DEGRADED_STABILITY" ? 0.44 : 0.28;
+        marketRegime === "RECOVERY"
+          ? 0.34
+          : marketRegime === "DEGRADED_STABILITY" || marketRegime === "MANAGED_PLATEAU"
+            ? 0.24
+            : 0.28;
       const event =
         !feedPaused && recoveryCandidate && Math.random() > 1 - recoveryProbability
           ? createRecoveryEvent(recoveryCandidate.id)

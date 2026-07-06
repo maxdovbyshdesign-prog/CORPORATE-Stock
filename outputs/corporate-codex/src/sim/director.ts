@@ -284,7 +284,7 @@ const archetypes: EventArchetype[] = [
     semanticPattern: "OPSEC:contract_expansion",
     pressureDrivers: ["lumenRelayStress", "pxbDeliveryConfidencePressure"],
     pressureIncrease: ["opsecProfitFromChaos"],
-    impactRules: { OPSEC: 1.1, ACSB: 0.8, OCI: 0.3, EXEX: 0.1 },
+    impactRules: { OPSEC: 0.7, ACSB: 0.4, OCI: 0.25, EXEX: -0.35, "PXB-X": -0.25 },
     headlineTemplates: ["OPSEC expands continuity contracts after {cause}.", "OPSEC cites blackout resilience demand in new perimeter assurance work."],
     bodyTemplates: ["Procurement desks treated the announcement as demand for high-latency security continuity, but oversight risk remained visible."],
     marketStateTemplates: ["Director still permits OPSEC upside when infrastructure stress is fresh, but novelty rules limit repeated contract expansion."],
@@ -340,7 +340,7 @@ const archetypes: EventArchetype[] = [
     cooldownCycles: 5,
     semanticPattern: "HALCYON:fatality_delay",
     pressureDrivers: ["ociOverheated", "lumenRelayStress"],
-    impactRules: { HALCYON: 0.8, OCI: 0.8, DOMUS: -0.2 },
+    impactRules: { HALCYON: 0.3, OCI: 0.5, SYNOPTIC: 0.1, DOMUS: -0.25, EXEX: -0.2 },
     institutionImpacts: { UNICOL: { publicTrust: -1 }, PSA: { publicTrust: -1 } },
     headlineTemplates: ["HALCYON delays fatality recognition pending signal confirmation.", "HALCYON extends exclusion review after {cause}."],
     bodyTemplates: ["Underwriters cited incomplete telemetry and flare interference as families remained outside the accounting event."],
@@ -380,7 +380,7 @@ const archetypes: EventArchetype[] = [
     semanticPattern: "DOMUS:service_interruption",
     pressureDrivers: ["domusSettlementStress", "lumenRelayStress"],
     pressureIncrease: ["domusSettlementStress"],
-    impactRules: { DOMUS: -1.2, OCI: 0.9, HALCYON: 0.6, LUMEN: 0.2 },
+    impactRules: { DOMUS: -1.2, OCI: 0.7, HALCYON: 0.35, LUMEN: 0.05, EXEX: -0.2, "PXB-X": -0.15, ANCHOR: -0.1 },
     institutionImpacts: { PSA: { publicTrust: -2 } },
     headlineTemplates: ["DOMUS reports {resource} interruption in {location}.", "DOMUS reroutes settlement life-support service after {cause}."],
     bodyTemplates: ["Residents were instructed to remain inside registered structures while emergency procurement language stayed active."],
@@ -539,7 +539,7 @@ const archetypes: EventArchetype[] = [
     semanticPattern: "ANCHOR:alternate_transfer_route",
     pressureDrivers: ["pxbDeliveryConfidencePressure", "anchorTransportReliability"],
     pressureRelief: ["pxbDeliveryConfidencePressure"],
-    impactRules: { ANCHOR: 1.0, "PXB-X": 0.9, EXEX: 0.5, CARBON: -0.4, OCI: -0.2 },
+    impactRules: { ANCHOR: 0.8, "PXB-X": 0.55, EXEX: 0.35, CARBON: -0.35, OCI: -0.2, HALCYON: -0.15 },
     headlineTemplates: ["Anchorpoint clears alternate transfer route for Proxima shipments.", "EXEX confirms constrained transfer slot through Anchorpoint capacity."],
     bodyTemplates: ["Delivery confidence improved after route diversity partly repaired the cargo-window problem."],
     marketStateTemplates: ["Director let PXB-X scarcity premium dominate after transport reliability improved."],
@@ -578,7 +578,7 @@ const archetypes: EventArchetype[] = [
     semanticPattern: "UNICOL:access_window_expired",
     pressureDrivers: ["unicolOperationalCapacity", "publicVisibilitySaturation", "lumenRelayStress"],
     pressureIncrease: ["ociOverheated"],
-    impactRules: { OCI: 0.4, HALCYON: 0.2, EXEX: -0.2, SYNOPTIC: 0.1 },
+    impactRules: { OCI: 0.35, HALCYON: 0.15, SYNOPTIC: 0.05, EXEX: -0.25, DOMUS: -0.15 },
     institutionImpacts: { UNICOL: { operationalCapacity: -2, publicTrust: -1, mandateIntegrity: -1, signalAccess: -1 } },
     headlineTemplates: ["UNICOL access window expires before corridor verification.", "UNICOL observer team reports delayed access confirmation for {location}."],
     bodyTemplates: ["The mission retained documentary credibility, but failed to convert the notice into timely field verification."],
@@ -635,7 +635,7 @@ const archetypes: EventArchetype[] = [
     semanticPattern: "PSA:unenforced_directive_expiry",
     pressureDrivers: ["psaCredibility", "publicVisibilitySaturation"],
     pressureRelief: ["psaCredibility"],
-    impactRules: { EXEX: 0.2, OPSEC: 0.1, OCI: 0.2, "PXB-X": 0.1 },
+    impactRules: { EXEX: 0.15, OPSEC: 0.05, OCI: 0.2, "PXB-X": -0.1, DOMUS: -0.1 },
     institutionImpacts: {
       PSA: {
         credibility: -1,
@@ -1040,9 +1040,9 @@ export const summarizeDirectorSession = ({
         ? acutePressure > 0.72
           ? "mixed"
           : "stabilizing"
-        : marketRegime === "MARKET_VOLATILITY" && acutePressure > 0.58
-          ? "escalating"
-          : marketRegime === "DEGRADED_STABILITY" || marketRegime === "POST_CRISIS_PLATEAU"
+      : marketRegime === "MARKET_VOLATILITY" && acutePressure > 0.58
+        ? "escalating"
+        : marketRegime === "DEGRADED_STABILITY" || marketRegime === "POST_CRISIS_PLATEAU" || marketRegime === "MANAGED_PLATEAU"
             ? acutePressure > 0.68
               ? "mixed"
               : "plateauing"

@@ -28,6 +28,7 @@ export type MarketRegime =
   | "DEGRADED_STABILITY"
   | "PANIC"
   | "RECOVERY"
+  | "MANAGED_PLATEAU"
   | "HALTED_REVIEW"
   | "POST_CRISIS_PLATEAU";
 
@@ -567,8 +568,10 @@ export const applyMeanReversion = (
         ? 0.65
         : marketRegime === "DEGRADED_STABILITY" || marketRegime === "POST_CRISIS_PLATEAU"
           ? 1.15
+          : marketRegime === "MANAGED_PLATEAU"
+            ? 1.05
           : marketRegime === "RECOVERY"
-            ? 1.3
+            ? 1.08
             : 1;
   const distance = (fairValue - currentValue) / Math.max(fairValue, 1);
   const systemsSupport =
@@ -595,10 +598,12 @@ export const classifyMarketRegime = ({
   market,
   events,
   sessionAgeMinutes,
+  institutionsState,
 }: {
   market: MarketState;
   events: MarketEvent[];
   sessionAgeMinutes: number;
+  institutionsState?: InstitutionState;
 }): MarketRegime => {
   const values = marketInstruments.map((instrument) => {
     const point = market[instrument.id];
@@ -608,13 +613,46 @@ export const classifyMarketRegime = ({
   const negativeCount = values.filter((value) => value < -4).length;
   const haltedCount = marketInstruments.filter((instrument) => market[instrument.id].marketStatus === "HALTED").length;
   const recent = events.slice(0, 12);
+  const immediate = events.slice(0, 6);
   const materialCount = recent.filter((event) => event.severity === "material").length;
-  const recoveryCount = recent.filter((event) => event.triggeredRecovery || event.tags.includes("reconstruction") || event.tags.includes("verified_access")).length;
+  const stabilizationCount = recent.filter((event) => event.triggeredRecovery || event.tags.includes("reconstruction") || event.tags.includes("verified_access")).length;
+  const unresolvedPressureCount = recent.filter(
+    (event) =>
+      event.tags.includes("legal_exposure") ||
+      event.tags.includes("public_visibility") ||
+      event.tags.includes("civilian_harm") ||
+      event.tags.includes("data_suppression") ||
+      event.tags.includes("denial") ||
+      event.category === "PSA Directive",
+  ).length;
+  const majorDestabilizerCount = immediate.filter(
+    (event) =>
+      event.severity === "material" ||
+      event.category === "Leak" ||
+      event.tags.includes("blackout") ||
+      event.tags.includes("habitat_failure") ||
+      event.tags.includes("data_suppression") ||
+      event.tags.includes("civilian_harm"),
+  ).length;
+  const riskPremiumMoves = (["OCI", "HALCYON"] as MarketInstrumentId[]).map((id) => {
+    const instrument = marketInstruments.find((item) => item.id === id) ?? marketInstruments[0];
+    const point = market[id];
+    return safePercentChange(point.value, point.previousClose, id, instrument.basePrice);
+  });
+  const riskPremiumMove = riskPremiumMoves.reduce((sum, value) => sum + value, 0) / riskPremiumMoves.length;
+  const riskPremiumEasing = riskPremiumMove < -0.3;
+  const psaEnforcementWeak = !institutionsState || institutionsState.PSA.enforcementCapacity < 12;
+  const strongStabilization = stabilizationCount >= 5 && averageMove > -2 && unresolvedPressureCount <= 2 && majorDestabilizerCount === 0 && riskPremiumEasing;
+  const containedButUnresolved =
+    stabilizationCount >= 2 &&
+    averageMove > -7 &&
+    (unresolvedPressureCount >= 2 || majorDestabilizerCount > 0 || psaEnforcementWeak);
 
   if (haltedCount) return "HALTED_REVIEW";
   if (negativeCount >= Math.ceil(marketInstruments.length * 0.72) && materialCount >= 4) return "PANIC";
+  if (strongStabilization && !psaEnforcementWeak) return "RECOVERY";
+  if (containedButUnresolved) return "MANAGED_PLATEAU";
   if (sessionAgeMinutes > 35 && materialCount <= 2 && Math.abs(averageMove) < 9) return "POST_CRISIS_PLATEAU";
-  if (recoveryCount >= 3 && averageMove > -4) return "RECOVERY";
   if (negativeCount >= Math.ceil(marketInstruments.length * 0.5)) return "DEGRADED_STABILITY";
   if (materialCount >= 3) return "MARKET_VOLATILITY";
   if (averageMove < -3) return "RISK_OFF";
@@ -628,7 +666,8 @@ export const regimeDescription = (regime: MarketRegime) => {
     MARKET_VOLATILITY: "Material headlines are arriving faster than desks can fully digest.",
     DEGRADED_STABILITY: "The market has absorbed the initial shock. Risk pricing remains elevated, but volatility is narrowing.",
     PANIC: "Participants are pricing cascading uncertainty rather than individual events.",
-    RECOVERY: "Countermeasures, verified access, or reconstruction signals are capping risk premiums.",
+    RECOVERY: "Legal pressure is easing and verified stabilization signals are beginning to restore confidence.",
+    MANAGED_PLATEAU: "Verification and reconstruction signals are limiting risk premiums, but the underlying dispute remains unresolved.",
     HALTED_REVIEW: "One or more instruments are under trading review after a current-window shock.",
     POST_CRISIS_PLATEAU: "Long-session fatigue has set in. Catastrophe risk is priced, but collapse is no longer accelerating.",
   };
@@ -983,6 +1022,8 @@ export const exportSessionMarkdown = ({
       ? "Disclosure review, halt news, or emergency countermeasure."
       : marketRegime === "RECOVERY"
         ? "Verification, settlement framework, or reconstruction follow-through."
+        : marketRegime === "MANAGED_PLATEAU"
+          ? "Managed containment unless enforcement, legal, or public-visibility pressure breaks the range."
         : marketRegime === "DEGRADED_STABILITY"
           ? "Stabilized crisis plateau unless a new leak or transport failure breaks the range."
           : "Further Corridor 12-B pressure or a controlled de-escalation signal.";
