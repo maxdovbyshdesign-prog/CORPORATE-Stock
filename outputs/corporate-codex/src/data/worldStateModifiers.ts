@@ -372,9 +372,9 @@ export const worldStateModifierBiasFor = (
   const tagBoost = Math.min(0.06, countOverlap(modifier.boostedTags, candidate.tags) * 0.02);
   const patternPenalty = modifier.suppressedSemanticPatterns.includes(candidate.semanticPattern) ? -0.12 : 0;
   const score = Number((patternBoost + tagBoost + patternPenalty).toFixed(3));
-  const favored = patternBoost + tagBoost > 0;
   const suppressed = patternPenalty < 0;
-  const material = patternBoost > 0 || suppressed || Math.abs(score) >= MEANINGFUL_BIAS_THRESHOLD;
+  const favored = !suppressed && patternBoost + tagBoost > 0;
+  const material = patternBoost > 0 || suppressed || (!suppressed && Math.abs(score) >= MEANINGFUL_BIAS_THRESHOLD);
 
   return {
     score,
@@ -382,8 +382,8 @@ export const worldStateModifierBiasFor = (
     suppressed,
     material,
     notes: [
-      material && favored ? `Modifier bias favored ${candidate.semanticPattern} under ${modifier.title}.` : "",
       material && suppressed ? `Modifier bias suppressed ${candidate.semanticPattern} under ${modifier.title}.` : "",
+      material && favored ? `Modifier bias favored ${candidate.semanticPattern} under ${modifier.title}.` : "",
     ].filter(Boolean),
   };
 };

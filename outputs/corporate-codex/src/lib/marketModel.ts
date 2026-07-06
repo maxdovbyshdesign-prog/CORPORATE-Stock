@@ -1503,6 +1503,7 @@ export const exportSessionMarkdown = ({
       impactLines(event.impacts) || "  - none",
       ...(isDebugExport ? eventBasketDiagnosticLines(eventDiagnosticsById.get(event.id) ?? calculateEventBasketDiagnostic(event)) : []),
       isDebugExport && event.marketStateNote ? `Market state: ${event.marketStateNote}` : "",
+      isDebugExport && event.surfaceContextNote ? `Surface context: ${event.surfaceContextNote}` : "",
       isDebugExport && event.directorNotes?.length ? `Director: ${event.directorNotes.join(" ")}` : "",
       event.publicReaction ? `Public reaction: ${event.publicReaction}` : "",
     ].filter(Boolean)),

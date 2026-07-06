@@ -82,6 +82,7 @@ export type MarketEvent = {
   publicReactionFamily?: string;
   worldModifierId?: string;
   worldModifierTitle?: string;
+  surfaceContextNote?: string;
   directorNotes?: string[];
 };
 

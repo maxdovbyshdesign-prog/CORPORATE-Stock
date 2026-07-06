@@ -5,6 +5,7 @@ import { deriveActiveWorldStateModifier, worldStateModifierBiasFor } from "../da
 import type { InstitutionState, MarketState } from "../App";
 import type { MarketRegime } from "../lib/marketModel";
 import type { NewsIntensity } from "../lib/newsEngine";
+import { realizeDirectorNewsSurface } from "../lib/newsSurface";
 
 // Current flow note for the spike:
 // The legacy event flow lives in newsEngine.ts. It picks a written NewsTemplate,
@@ -1062,6 +1063,9 @@ export const createDirectedMarketEvent = (context: EventDirectorContext): Market
     : 0;
   const publicReactionCandidate =
     publicReactionFamily && recentFamilyCount < 2 && numeric >= 54 ? choice(publicReactions[publicReactionFamily] ?? []) : undefined;
+  const involvedActors = Array.from(new Set([archetype.actorId, ...archetype.targetIds])).filter(
+    (id): id is MarketInstrumentId | InstitutionId => isMarketId(id) || isInstitutionId(id),
+  );
   const slots = {
     actorDisplayName: entityLabel(archetype.actorId),
     actor: isMarketId(archetype.actorId) ? archetype.actorId : archetype.actorId,
@@ -1078,9 +1082,21 @@ export const createDirectedMarketEvent = (context: EventDirectorContext): Market
     publicPhrase: publicReactionCandidate ?? "public channels kept repeating the phrase without moving the tape",
     resource: resourceFor(archetype.outputTags),
   };
-  const headline = renderTemplate(choice(archetype.headlineTemplates), slots);
-  const summary = renderTemplate(choice(archetype.bodyTemplates), slots);
-  const marketStateNote = renderTemplate(choice(archetype.marketStateTemplates ?? [archetype.semanticPattern]), slots);
+  const surface = realizeDirectorNewsSurface({
+    semanticPattern: archetype.semanticPattern,
+    headlineTemplates: archetype.headlineTemplates,
+    bodyTemplates: archetype.bodyTemplates,
+    marketStateTemplates: archetype.marketStateTemplates ?? [archetype.semanticPattern],
+    tags: archetype.outputTags,
+    involvedActors,
+    publicReactionFamily,
+    marketRegime: context.marketRegime,
+    phase: phaseFor(archetype.outputTags, categoryMap[archetype.category]),
+    worldModifier: activeWorldModifier?.modifier,
+  });
+  const headline = renderTemplate(choice(surface.headlineTemplates), slots);
+  const summary = renderTemplate(choice(surface.bodyTemplates), slots);
+  const marketStateNote = renderTemplate(choice(surface.marketStateTemplates), slots);
   const impactScale = selected.forcedFallback ? 0.35 : selected.softGated ? 0.62 : 1;
   const adjustedImpacts = Object.fromEntries(
     Object.entries(archetype.impactRules).map(([id, value]) => {
@@ -1106,9 +1122,6 @@ export const createDirectedMarketEvent = (context: EventDirectorContext): Market
     ...selected.notes.map((note) => `Novelty: ${note}.`),
     marketStateNote,
   ].filter(Boolean);
-  const involvedActors = Array.from(new Set([archetype.actorId, ...archetype.targetIds])).filter(
-    (id): id is MarketInstrumentId | InstitutionId => isMarketId(id) || isInstitutionId(id),
-  );
   const timestamp = Date.now();
 
   return {
@@ -1134,6 +1147,7 @@ export const createDirectedMarketEvent = (context: EventDirectorContext): Market
     noveltyScore: selected.noveltyScore,
     worldModifierId: activeWorldModifier && selected.worldModifierBiasMaterial ? activeWorldModifier.modifier.id : undefined,
     worldModifierTitle: activeWorldModifier && selected.worldModifierBiasMaterial ? activeWorldModifier.modifier.title : undefined,
+    surfaceContextNote: surface.surfaceContextNote,
     marketStateNote,
     directorNotes,
   };
