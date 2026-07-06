@@ -80,6 +80,8 @@ export type MarketEvent = {
   semanticPattern?: string;
   noveltyScore?: number;
   publicReactionFamily?: string;
+  worldModifierId?: string;
+  worldModifierTitle?: string;
   directorNotes?: string[];
 };
 

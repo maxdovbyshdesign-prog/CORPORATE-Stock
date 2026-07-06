@@ -1,6 +1,12 @@
 import { institutions, marketInstruments, type Institution, type MarketInstrumentId } from "../data/entities";
 import type { EventTag, MarketEvent } from "../data/events";
 import { classifyEventStorylineLanes, summarizeStorylineLanes } from "../data/storylineLanes";
+import {
+  deriveActiveWorldStateModifier,
+  worldStateModifierDiagnostics,
+  worldStateModifierLaneTitles,
+  type WorldStateModifierDiagnostics,
+} from "../data/worldStateModifiers";
 import type { MarketState, InstitutionState } from "../App";
 import { summarizeDirectorSession } from "../sim/director";
 import { summarizePublicPulse, type SocialPost } from "../sim/socialEngine";
@@ -1265,6 +1271,33 @@ const narrativeLaneDiagnosticSectionLines = (summary: ReturnType<typeof summariz
   ``,
 ];
 
+const cleanWorldStatePressureLines = (diagnostics: WorldStateModifierDiagnostics) => [
+  `Active world pressure:`,
+  diagnostics.active
+    ? `- ${diagnostics.active.modifier.title} - ${diagnostics.active.modifier.summary}`
+    : diagnostics.recentInfluencedEvents.length
+      ? `- Recently active: ${diagnostics.recentInfluencedEvents[0].modifierTitle}.`
+      : `- none`,
+  ``,
+];
+
+const worldStateModifierDiagnosticSectionLines = (diagnostics: WorldStateModifierDiagnostics) => [
+  `## World-State Modifier Diagnostics`,
+  `Active modifier: ${diagnostics.active?.modifier.title ?? "none"}`,
+  diagnostics.active ? `Remaining duration: ${diagnostics.active.remainingEvents} events` : `Remaining duration: none`,
+  diagnostics.active ? `Activation reason: ${diagnostics.active.activationReason}` : `Activation reason: none`,
+  diagnostics.active ? `Affected lanes: ${worldStateModifierLaneTitles(diagnostics.active.modifier).join(", ")}` : `Affected lanes: none`,
+  diagnostics.active ? `Boosted patterns: ${diagnostics.active.modifier.boostedSemanticPatterns.join(", ")}` : `Boosted patterns: none`,
+  diagnostics.active ? `Suppressed patterns: ${diagnostics.active.modifier.suppressedSemanticPatterns.join(", ") || "none"}` : `Suppressed patterns: none`,
+  `Recent modifier influence: ${
+    diagnostics.recentInfluencedEvents.length
+      ? diagnostics.recentInfluencedEvents.map((event) => `${event.modifierTitle} / ${event.pattern}`).join(", ")
+      : "none"
+  }`,
+  `Recently expired or cooling down: ${diagnostics.recentlyExpired.join(", ") || "none"}`,
+  ``,
+];
+
 export const exportSessionMarkdown = ({
   market,
   institutionsState,
@@ -1292,6 +1325,12 @@ export const exportSessionMarkdown = ({
   const eventDiagnosticsById = new Map(eventDiagnostics.map((diagnostic) => [diagnostic.event.id, diagnostic]));
   const driftDiagnostics = basketDriftDiagnostics(eventDiagnostics, marketRegime, activeStoryline.unresolved);
   const narrativeLaneSummary = summarizeStorylineLanes(orderedEvents);
+  const activeWorldModifier = deriveActiveWorldStateModifier({
+    recentEvents: orderedEvents,
+    marketRegime,
+    psaEnforcementCapacity: institutionsState.PSA.enforcementCapacity,
+  });
+  const worldModifierDiagnostics = worldStateModifierDiagnostics(orderedEvents, activeWorldModifier);
   const eventById = new Map(orderedEvents.map((event) => [event.id, event]));
   const simulatedEvents = orderedEvents.filter((event) => event.simulatedLabel);
   const simulatedTimeRange = simulatedEvents.length
@@ -1368,6 +1407,8 @@ export const exportSessionMarkdown = ({
     ``,
     ...cleanNarrativeLaneLines(narrativeLaneSummary),
     ``,
+    ...cleanWorldStatePressureLines(worldModifierDiagnostics),
+    ``,
     `## Director Notes`,
     ...directorNotes.map((note) => `- ${note}`),
     ...(isDebugExport ? driftDirectorNoteLines(driftDiagnostics).map((note) => `- ${note}`) : []),
@@ -1424,6 +1465,7 @@ export const exportSessionMarkdown = ({
               })
               .join(", ") || "none"
           }`,
+          `- active world pressure: ${worldModifierDiagnostics.active?.modifier.title ?? "none"}`,
         ]
       : []),
     ``,
@@ -1435,6 +1477,7 @@ export const exportSessionMarkdown = ({
     `Unresolved: ${activeStoryline.unresolved.join(", ")}`,
     ``,
     ...(isDebugExport ? narrativeLaneDiagnosticSectionLines(narrativeLaneSummary, activeStoryline.unresolved) : []),
+    ...(isDebugExport ? worldStateModifierDiagnosticSectionLines(worldModifierDiagnostics) : []),
     ...(isDebugExport ? driftDiagnosticSectionLines(driftDiagnostics) : []),
     ...(isDebugExport ? recoveryDiagnosticSectionLines(eventDiagnostics) : []),
     `## Market Timeline`,
