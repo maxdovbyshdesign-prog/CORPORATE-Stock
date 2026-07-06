@@ -11,15 +11,19 @@ type InstitutionsViewProps = {
   onOpenDocument: (documentId: CodexDocumentId, section?: string) => void;
 };
 
-const Metric = ({ label, value }: { label: string; value: number }) => (
-  <div className="institution-metric">
-    <span>{label}</span>
-    <strong>{value}%</strong>
-    <div>
-      <i style={{ width: `${value}%` }} />
+const Metric = ({ label, value }: { label: string; value: number }) => {
+  const displayValue = Math.round(Math.max(0, Math.min(100, value)));
+
+  return (
+    <div className="institution-metric">
+      <span>{label}</span>
+      <strong>{displayValue}%</strong>
+      <div>
+        <i style={{ width: `${displayValue}%` }} />
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const InstitutionCard = ({
   institution,

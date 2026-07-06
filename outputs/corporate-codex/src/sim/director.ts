@@ -149,6 +149,15 @@ const actorAction = (event: MarketEvent) => `${event.involvedActors[0] ?? "MARKE
 const locationFromEvent = (event: MarketEvent) =>
   places.find((place) => event.headline.includes(place) || event.summary.includes(place)) ?? "";
 
+const countConsecutiveSemantic = (events: MarketEvent[], semanticPattern: string) => {
+  let count = 0;
+  for (const event of events) {
+    if (eventSemanticPattern(event) !== semanticPattern) break;
+    count += 1;
+  }
+  return count;
+};
+
 export const computeDirectorPressures = ({
   market,
   institutionsState,
@@ -372,7 +381,7 @@ const archetypes: EventArchetype[] = [
     pressureDrivers: ["domusSettlementStress", "lumenRelayStress"],
     pressureIncrease: ["domusSettlementStress"],
     impactRules: { DOMUS: -1.2, OCI: 0.9, HALCYON: 0.6, LUMEN: 0.2 },
-    institutionImpacts: { PSA: { publicTrust: -2, enforcementCapacity: -1 } },
+    institutionImpacts: { PSA: { publicTrust: -2 } },
     headlineTemplates: ["DOMUS reports {resource} interruption in {location}.", "DOMUS reroutes settlement life-support service after {cause}."],
     bodyTemplates: ["Residents were instructed to remain inside registered structures while emergency procurement language stayed active."],
     marketStateTemplates: ["Director added settlement stress before allowing a later DOMUS stabilization valve."],
@@ -558,6 +567,26 @@ const archetypes: EventArchetype[] = [
     locations: ["civilian movement corridor", "Corridor 12-B"],
   },
   {
+    id: "unicol-access-window-expired",
+    actorId: "UNICOL",
+    action: "access_window_expired",
+    category: "observer_update",
+    source: "UNICOL OBSERVER MISSION",
+    outputTags: ["unicol", "civilian_harm", "communications"],
+    baseSeverity: 46,
+    cooldownCycles: 4,
+    semanticPattern: "UNICOL:access_window_expired",
+    pressureDrivers: ["unicolOperationalCapacity", "publicVisibilitySaturation", "lumenRelayStress"],
+    pressureIncrease: ["ociOverheated"],
+    impactRules: { OCI: 0.4, HALCYON: 0.2, EXEX: -0.2, SYNOPTIC: 0.1 },
+    institutionImpacts: { UNICOL: { operationalCapacity: -2, publicTrust: -1, mandateIntegrity: -1, signalAccess: -1 } },
+    headlineTemplates: ["UNICOL access window expires before corridor verification.", "UNICOL observer team reports delayed access confirmation for {location}."],
+    bodyTemplates: ["The mission retained documentary credibility, but failed to convert the notice into timely field verification."],
+    marketStateTemplates: ["Director used a UNICOL counterweight so verified access cannot compound without operational setbacks."],
+    targetIds: ["UNICOL", "OCI", "HALCYON", "SYNOPTIC"],
+    locations: ["civilian movement corridor", "Corridor 12-B"],
+  },
+  {
     id: "psa-low-enforcement-directive",
     actorId: "PSA",
     action: "directive_low_enforcement",
@@ -588,11 +617,37 @@ const archetypes: EventArchetype[] = [
     semanticPattern: "PSA:licensing_objection",
     pressureDrivers: ["psaCredibility", "psaEnforcement", "unicolOperationalCapacity"],
     impactRules: { EXEX: -0.5, OPSEC: -0.3, "PXB-X": -0.2, OCI: -0.2 },
-    institutionImpacts: { PSA: { credibility: 2, enforcementCapacity: 1, publicTrust: 1, recentDirective: "Licensing objection filed with verified-access evidence attached." } },
+    institutionImpacts: { PSA: { credibility: 2, mandateIntegrity: 1, publicTrust: 1, recentDirective: "Licensing objection filed with verified-access evidence attached." } },
     headlineTemplates: ["PSA licensing objection gains weight after observer access review.", "PSA files corridor licensing challenge with verified-access attachment."],
     bodyTemplates: ["Directive language gained legal weight because outside observers could finally confirm parts of the corridor record."],
-    marketStateTemplates: ["Director strengthened PSA only after verified access improved institutional credibility."],
+    marketStateTemplates: ["Director strengthened PSA legal weight without treating paperwork as real enforcement capacity."],
     targetIds: ["EXEX", "OPSEC", "PXB-X", "UNICOL"],
+  },
+  {
+    id: "psa-unenforced-directive-expiry",
+    actorId: "PSA",
+    action: "unenforced_directive_expiry",
+    category: "psa_directive",
+    source: "PSA EMERGENCY OFFICE",
+    outputTags: ["psa", "legal_exposure", "public_visibility"],
+    baseSeverity: 38,
+    cooldownCycles: 4,
+    semanticPattern: "PSA:unenforced_directive_expiry",
+    pressureDrivers: ["psaCredibility", "publicVisibilitySaturation"],
+    pressureRelief: ["psaCredibility"],
+    impactRules: { EXEX: 0.2, OPSEC: 0.1, OCI: 0.2, "PXB-X": 0.1 },
+    institutionImpacts: {
+      PSA: {
+        credibility: -1,
+        publicTrust: -2,
+        mandateIntegrity: -1,
+        latestStatement: "Commercial halt request expired without confirmed compliance.",
+      },
+    },
+    headlineTemplates: ["PSA commercial halt request expires without confirmed compliance.", "Contractor desks question PSA directive after no compliance notice follows."],
+    bodyTemplates: ["The authority retained a legal filing trail, but the order did not produce visible field compliance."],
+    marketStateTemplates: ["Director punished unenforced PSA directives without lowering enforcement capacity through hidden side effects."],
+    targetIds: ["PSA", "EXEX", "OPSEC", "OCI"],
   },
   {
     id: "market-ambient-note",
@@ -605,9 +660,20 @@ const archetypes: EventArchetype[] = [
     cooldownCycles: 2,
     semanticPattern: "MARKET:ambient_note",
     pressureDrivers: ["publicVisibilitySaturation", "pxbDeliveryConfidencePressure"],
-    impactRules: { OCI: 0.1, "PXB-X": -0.1, EXEX: 0.1 },
-    headlineTemplates: ["Markets hold prior risk range while desks wait for cleaner corridor data."],
-    bodyTemplates: ["No single disclosure changed the tape; desks treated the session as a pause between higher-conviction signals."],
+    impactRules: { OCI: 0.02, "PXB-X": 0.08, EXEX: 0.01 },
+    headlineTemplates: [
+      "Markets hold prior risk range while desks wait for cleaner corridor data.",
+      "Desks describe the tape as directionless pending a higher-conviction signal.",
+      "Trading desks note a lack of fresh catalysts inside the current risk range.",
+      "Risk desks keep Corridor 12-B pricing inside prior bands.",
+      "The tape pauses as verification, transport, and liability signals offset.",
+    ],
+    bodyTemplates: [
+      "No single disclosure changed the tape; desks treated the session as a pause between higher-conviction signals.",
+      "Competing transport, verification, and legal signals left the market without a clean directional read.",
+      "Risk desks held prior assumptions while waiting for stronger corridor evidence.",
+      "The session drifted as stabilizing signals offset fresh legal and logistics pressure.",
+    ],
     marketStateTemplates: ["Director used ambient fallback because all high-pressure candidates were low novelty."],
     targetIds: ["EXEX", "PXB-X", "HALCYON"],
   },
@@ -669,11 +735,16 @@ const scoreNovelty = (archetype: EventArchetype, recentEvents: MarketEvent[]) =>
 const chooseCandidate = (context: EventDirectorContext) => {
   const pressures = computeDirectorPressures(context);
   const intensityBoost = context.intensity === "high" ? 0.12 : context.intensity === "low" ? -0.08 : 0;
+  const ambientStreak = countConsecutiveSemantic(context.recentEvents, "MARKET:ambient_note");
+  const relaxedNoveltyFloor = ambientStreak >= 3 ? 0.18 : 0.45;
+  const relaxedScoreFloor = ambientStreak >= 3 ? 0.12 : 0.18;
   const allCandidates: DirectorCandidate[] = archetypes
     .filter((archetype) => !archetype.allowedRegimes || archetype.allowedRegimes.includes(context.marketRegime))
     .map((archetype) => {
       const pressureScore = pressureFor(archetype, pressures);
       const { noveltyScore, notes } = scoreNovelty(archetype, context.recentEvents);
+      const isAmbient = archetype.semanticPattern === "MARKET:ambient_note";
+      const noveltyFloor = !isAmbient && ambientStreak >= 3 ? relaxedNoveltyFloor : 0.45;
       const semanticCooldownHit = countWhere(
         context.recentEvents.slice(0, archetype.cooldownCycles),
         (event) => eventSemanticPattern(event) === archetype.semanticPattern,
@@ -691,7 +762,7 @@ const chooseCandidate = (context: EventDirectorContext) => {
           countWhere(context.recentEvents.slice(0, 5), (event) => (event.impacts[id as MarketInstrumentId] ?? 0) > 0.1) >= 3,
       ).length;
       const rejections = [
-        noveltyScore < 0.45 ? `Rejected ${archetype.semanticPattern} due to low novelty score ${noveltyScore.toFixed(2)}.` : "",
+        noveltyScore < noveltyFloor ? `Rejected ${archetype.semanticPattern} due to low novelty score ${noveltyScore.toFixed(2)}.` : "",
         archetype.semanticPattern !== "MARKET:ambient_note" && semanticCooldownHit
           ? `Rejected ${archetype.semanticPattern} due to semantic cooldown.`
           : "",
@@ -714,7 +785,7 @@ const chooseCandidate = (context: EventDirectorContext) => {
         pressureScore,
         score: Number(score.toFixed(3)),
         notes,
-        rejections,
+        rejections: isAmbient && ambientStreak >= 2 ? [...rejections, `Ambient duplicate pressure active after ${ambientStreak} consecutive fallback notes.`] : rejections,
         softGated,
       };
     })
@@ -723,7 +794,11 @@ const chooseCandidate = (context: EventDirectorContext) => {
     (candidate) => candidate.noveltyScore >= 0.7 && candidate.rejections.length === 0 && candidate.score > 0.2,
   );
   const softCandidates = allCandidates.filter(
-    (candidate) => candidate.noveltyScore >= 0.45 && candidate.rejections.length === 0 && candidate.score > 0.18,
+    (candidate) =>
+      candidate.archetype.semanticPattern !== "MARKET:ambient_note" &&
+      candidate.noveltyScore >= relaxedNoveltyFloor &&
+      candidate.rejections.length === 0 &&
+      candidate.score > relaxedScoreFloor,
   );
   const ambientFallback = allCandidates.find((candidate) => candidate.archetype.semanticPattern === "MARKET:ambient_note");
   const top = (normalCandidates.length ? normalCandidates : softCandidates.length ? softCandidates : ambientFallback ? [{ ...ambientFallback, forcedFallback: true }] : []).slice(0, 5);
@@ -733,7 +808,7 @@ const chooseCandidate = (context: EventDirectorContext) => {
   const suppressed = allCandidates
     .filter((candidate) => candidate.rejections.length > 0 && candidate.archetype.semanticPattern !== selected.archetype.semanticPattern)
     .slice(0, 8);
-  return { selected, pressures, suppressed };
+  return { selected, pressures, suppressed, ambientStreak };
 };
 
 const publicReactions: Record<string, string[]> = {
@@ -811,6 +886,18 @@ const compactImpacts = (impacts: Partial<Record<MarketInstrumentId, number>>) =>
     .map(([id, value]) => `${getMarketInstrument(id as MarketInstrumentId).symbol} ${value! >= 0 ? "+" : ""}${value!.toFixed(1)}%`)
     .join(", ");
 
+const ambientImpactJitter = (id: MarketInstrumentId, value: number) => {
+  const jitter = (Math.random() - 0.5) * 0.1;
+  const next = value + jitter;
+  const caps: Partial<Record<MarketInstrumentId, [number, number]>> = {
+    OCI: [-0.03, 0.05],
+    "PXB-X": [0.03, 0.13],
+    EXEX: [-0.03, 0.04],
+  };
+  const [min, max] = caps[id] ?? [-0.05, 0.05];
+  return Number(Math.max(min, Math.min(max, next)).toFixed(2));
+};
+
 const topPressureLines = (pressures: DirectorPressureModel) =>
   (Object.entries(pressures) as Array<[keyof DirectorPressureModel, number | string]>)
     .filter((entry): entry is [PressureKey, number] => typeof entry[1] === "number")
@@ -822,7 +909,7 @@ export const createDirectedMarketEvent = (context: EventDirectorContext): Market
   const result = chooseCandidate(context);
   if (!result) return null;
 
-  const { selected, pressures, suppressed } = result;
+  const { selected, pressures, suppressed, ambientStreak } = result;
   const { archetype } = selected;
   const pressureScore = pressureFor(archetype, pressures);
   const { numeric, eventSeverity } = severityFor(archetype.baseSeverity, context.intensity, pressureScore);
@@ -855,7 +942,15 @@ export const createDirectedMarketEvent = (context: EventDirectorContext): Market
   const marketStateNote = renderTemplate(choice(archetype.marketStateTemplates ?? [archetype.semanticPattern]), slots);
   const impactScale = selected.forcedFallback ? 0.35 : selected.softGated ? 0.62 : 1;
   const adjustedImpacts = Object.fromEntries(
-    Object.entries(archetype.impactRules).map(([id, value]) => [id, Number(((value ?? 0) * impactScale).toFixed(2))]),
+    Object.entries(archetype.impactRules).map(([id, value]) => {
+      const scaled = Number(((value ?? 0) * impactScale).toFixed(2));
+      return [
+        id,
+        archetype.semanticPattern === "MARKET:ambient_note"
+          ? ambientImpactJitter(id as MarketInstrumentId, scaled)
+          : scaled,
+      ];
+    }),
   ) as Partial<Record<MarketInstrumentId, number>>;
   const rejectionNotes = suppressed.flatMap((candidate) => candidate.rejections).slice(0, 4);
   const directorNotes = [
@@ -864,6 +959,7 @@ export const createDirectedMarketEvent = (context: EventDirectorContext): Market
     rejectionNotes.length ? `Selected alternate ${archetype.semanticPattern}.` : "",
     selected.softGated ? `Selected ${archetype.semanticPattern} as a reduced-impact soft-gated candidate at novelty ${selected.noveltyScore.toFixed(2)}.` : "",
     selected.forcedFallback ? "Director used ambient fallback because all high-pressure candidates were low novelty." : "",
+    ambientStreak >= 2 ? `Ambient fallback streak before selection: ${ambientStreak}.` : "",
     ...selected.notes.map((note) => `Novelty: ${note}.`),
     marketStateNote,
   ].filter(Boolean);
@@ -925,6 +1021,16 @@ export const summarizeDirectorSession = ({
   const saturated = [...semanticCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
   const topPressures = topPressureLines(pressures);
   const latest = recentDirected[0];
+  const ambientStreak = countConsecutiveSemantic(events, "MARKET:ambient_note");
+  const ambientDuplicateRejections = events
+    .flatMap((event) => event.directorNotes ?? [])
+    .filter((note) => note.includes("Ambient duplicate pressure active")).length;
+  const institutionMetricLines = institutions
+    .map((institution) => {
+      const current = institutionsState[institution.id];
+      return `${institution.id} credibility ${Math.round(current.credibility)}%, operational ${Math.round(current.operationalCapacity)}%, enforcement ${Math.round(current.enforcementCapacity)}%, trust ${Math.round(current.publicTrust)}%`;
+    })
+    .join("; ");
   const stabilizers = countWhere(events.slice(0, 12), (event) => event.tags.includes("verified_access") || event.tags.includes("reconstruction"));
   const acutePressure = Math.max(pressures.exexLegalPressure, pressures.publicVisibilitySaturation, pressures.opsecLiabilityAccumulation, pressures.ociOverheated);
   const posture =
@@ -970,6 +1076,9 @@ export const summarizeDirectorSession = ({
     ...cleanNotes,
     `Top pressure signals: ${topPressures.join(", ") || "none"}.`,
     `Most saturated semantic patterns: ${saturated.map(([pattern, count]) => `${pattern} (${count})`).join(", ") || "none"}.`,
+    `Institution damping active: positive deltas taper near 100, non-enforcement metrics drift toward baselines, enforcement changes only on explicit enforcement impacts.`,
+    `Top institution metrics after damping: ${institutionMetricLines}.`,
+    `Ambient fallback streak: ${ambientStreak}; rejected ambient duplicates noted: ${ambientDuplicateRejections}.`,
     latest?.directorNotes?.[0] ?? "Director has not generated a recent event in this session window.",
   ];
 };

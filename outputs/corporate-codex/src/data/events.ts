@@ -114,7 +114,6 @@ export const eventTemplates: MarketEvent[] = [
     impacts: { EXEX: 1.7, OPSEC: 0.6, "PXB-X": 1.3, OCI: 0.2, DOMUS: -0.2 },
     institutionImpacts: {
       PSA: {
-        enforcementCapacity: -1,
         publicTrust: -2,
         latestStatement: "Authority contests corridor clearance and requests filing review.",
       },
@@ -239,7 +238,7 @@ export const eventTemplates: MarketEvent[] = [
     involvedActors: ["DOMUS", "PSA", "HALCYON", "OCI"],
     impacts: { DOMUS: -1.5, HALCYON: 0.7, OCI: 0.9, LUMEN: 0.2 },
     institutionImpacts: {
-      PSA: { publicTrust: -3, enforcementCapacity: -1 },
+      PSA: { publicTrust: -3 },
     },
     mediaSnippet: "Habitat failure lifts risk indexes while DOMUS sells off. DOMUS -1.5%, OCI +0.9%.",
     severity: "material",
@@ -268,7 +267,6 @@ export const eventTemplates: MarketEvent[] = [
     involvedActors: ["EXEX", "OPSEC", "PXB-X", "OCI"],
     impacts: { EXEX: -1.0, OPSEC: 1.4, "PXB-X": 1.7, OCI: 0.9, ACSB: 0.6 },
     institutionImpacts: {
-      PSA: { enforcementCapacity: -1 },
       UNICOL: { operationalCapacity: -1 },
     },
     mediaSnippet: "Pipeline sabotage reprices supply and security. PXB-X +1.7%, OPSEC +1.4%, EXEX -1.0%.",

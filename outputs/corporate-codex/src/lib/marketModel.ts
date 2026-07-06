@@ -2,6 +2,7 @@ import { institutions, marketInstruments, type Institution, type MarketInstrumen
 import type { EventTag, MarketEvent } from "../data/events";
 import type { MarketState, InstitutionState } from "../App";
 import { summarizeDirectorSession } from "../sim/director";
+import { summarizePublicPulse, type SocialPost } from "../sim/socialEngine";
 
 export type CauseType =
   | "event"
@@ -929,6 +930,7 @@ export const exportSessionMarkdown = ({
   market,
   institutionsState,
   events,
+  publicPulsePosts = [],
   actorId,
   marketStatus,
   marketRegime = "NORMAL",
@@ -937,6 +939,7 @@ export const exportSessionMarkdown = ({
   market: MarketState;
   institutionsState: InstitutionState;
   events: MarketEvent[];
+  publicPulsePosts?: SocialPost[];
   actorId?: MarketInstrumentId;
   marketStatus: string;
   marketRegime?: MarketRegime;
@@ -991,6 +994,7 @@ export const exportSessionMarkdown = ({
     activeStorylinePhase: activeStoryline.phase,
     debug: isDebugExport,
   });
+  const publicPulseSummary = summarizePublicPulse(publicPulsePosts);
   const majorMovements = [...currentMoves]
     .filter(({ latest }) => !!latest)
     .sort((a, b) => Math.abs(b.move) - Math.abs(a.move))
@@ -1029,7 +1033,7 @@ export const exportSessionMarkdown = ({
     `## Institution Metrics`,
     ...institutions.map((institution: Institution) => {
       const current = institutionsState[institution.id];
-      return `- ${institution.id}: credibility ${current.credibility}%, operational ${current.operationalCapacity}%, enforcement ${current.enforcementCapacity}%, trust ${current.publicTrust}%`;
+      return `- ${institution.id}: credibility ${Math.round(current.credibility)}%, operational ${Math.round(current.operationalCapacity)}%, enforcement ${Math.round(current.enforcementCapacity)}%, trust ${Math.round(current.publicTrust)}%`;
     }),
     ``,
     `## Biggest Winners / Losers`,
@@ -1041,6 +1045,28 @@ export const exportSessionMarkdown = ({
     ``,
     `## Main Beneficiaries`,
     topBeneficiaries.length ? topBeneficiaries.map((id) => `- ${id}: ${beneficiaryCounts.get(id)} positive event references`).join("\n") : "- none",
+    ``,
+    `## Public Pulse`,
+    `- dominant sentiment: ${publicPulseSummary.dominantSentiment}`,
+    `- most active topics: ${publicPulseSummary.mostActiveTopics.join(", ") || "quiet"}`,
+    `- sample posts:`,
+    ...(publicPulseSummary.samplePosts.length
+      ? publicPulseSummary.samplePosts.map((post) => `  - ${post.handle}: "${post.text}"`)
+      : ["  - none"]),
+    ...(isDebugExport
+      ? [
+          `- recent post count: ${publicPulseSummary.recentPostCount}`,
+          `- top persona types: ${publicPulseSummary.topPersonaTypes.join(", ") || "none"}`,
+          `- top sentiment tags: ${publicPulseSummary.topSentimentTags.join(", ") || "none"}`,
+          `- saturation contributions: ${publicPulseSummary.saturationContributions.join(", ") || "none"}`,
+          `- recent related events: ${
+            publicPulsePosts
+              .slice(0, 8)
+              .map((post) => `${post.handle} -> ${post.relatedEventId ?? "ambient"}`)
+              .join(", ") || "none"
+          }`,
+        ]
+      : []),
     ``,
     `## Active Storyline`,
     `${activeStoryline.title}`,

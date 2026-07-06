@@ -13,7 +13,7 @@ import {
   type InstitutionId,
   type MarketInstrumentId,
 } from "./data/entities";
-import type { MarketEvent } from "./data/events";
+import type { InstitutionImpact, MarketEvent } from "./data/events";
 import {
   applyMeanReversion,
   activeStoryline,
@@ -37,6 +37,7 @@ import {
   type MarketStatus,
 } from "./lib/marketModel";
 import { generateDirectedMarketEvent, generateMarketEvent, generatePublicReactionEvent, type NewsIntensity } from "./lib/newsEngine";
+import { generateSocialPostsForEvent, type SocialPost } from "./sim/socialEngine";
 
 export type MarketPoint = {
   value: number;
@@ -97,10 +98,87 @@ const createInitialInstitutionState = (): InstitutionState =>
   Object.fromEntries(institutions.map((institution) => [institution.id, { ...institution }])) as InstitutionState;
 
 const clamp = (value: number, min: number, max = Number.POSITIVE_INFINITY) => Math.min(Math.max(value, min), max);
-const clampMetric = (value: number) => Math.round(clamp(value, 0, 100));
+const clampMetric = (value: number) => clamp(value, 0, 100);
 const cloneImpacts = (event: MarketEvent) => ({ ...event.impacts });
 const countMemory = (memory: EventMemory, actor: string, tags: string[]) =>
   tags.reduce((sum, tag) => sum + (memory[`${actor}:${tag}`] ?? 0), 0);
+
+type InstitutionMetricKey =
+  | "credibility"
+  | "operationalCapacity"
+  | "enforcementCapacity"
+  | "mandateIntegrity"
+  | "publicTrust"
+  | "signalAccess";
+
+const institutionMetricBaselines: Record<InstitutionId, Record<InstitutionMetricKey, number>> = {
+  UNICOL: {
+    credibility: 45,
+    operationalCapacity: 20,
+    enforcementCapacity: 11,
+    mandateIntegrity: 45,
+    publicTrust: 20,
+    signalAccess: 25,
+  },
+  PSA: {
+    credibility: 25,
+    operationalCapacity: 20,
+    enforcementCapacity: 0,
+    mandateIntegrity: 35,
+    publicTrust: 15,
+    signalAccess: 20,
+  },
+};
+
+const hasMetric = (impact: InstitutionImpact, metric: InstitutionMetricKey) =>
+  Object.prototype.hasOwnProperty.call(impact, metric);
+
+const applyInstitutionDelta = (
+  current: number,
+  delta: number,
+  baseline: number,
+  options?: {
+    gainDamping?: number;
+    lossDamping?: number;
+    driftRate?: number;
+  },
+) => {
+  const safeBaseline = Math.max(1, baseline);
+  const gain = delta > 0 ? delta * (options?.gainDamping ?? 1) * (1 - current / 100) : 0;
+  const loss = delta < 0 ? delta * (options?.lossDamping ?? 1) * Math.max(0.5, current / safeBaseline) : 0;
+  const drift = (baseline - current) * (options?.driftRate ?? 0.01);
+  return clampMetric(current + gain + loss + drift);
+};
+
+const applyInstitutionImpact = (
+  current: Institution,
+  institutionId: InstitutionId,
+  impact: InstitutionImpact = {},
+) => {
+  const baseline = institutionMetricBaselines[institutionId];
+  const metric = (key: InstitutionMetricKey) =>
+    applyInstitutionDelta(current[key], impact[key] ?? 0, baseline[key]);
+  const enforcementCapacity = hasMetric(impact, "enforcementCapacity")
+    ? applyInstitutionDelta(current.enforcementCapacity, impact.enforcementCapacity ?? 0, baseline.enforcementCapacity, {
+        gainDamping: 0.45,
+        lossDamping: 0.85,
+        driftRate: 0.004,
+      })
+    : current.enforcementCapacity;
+
+  return {
+    ...current,
+    credibility: metric("credibility"),
+    operationalCapacity: metric("operationalCapacity"),
+    enforcementCapacity,
+    mandateIntegrity: metric("mandateIntegrity"),
+    publicTrust: metric("publicTrust"),
+    signalAccess: metric("signalAccess"),
+    latestStatement: impact.latestStatement ?? current.latestStatement,
+    recentDirective: impact.recentDirective ?? current.recentDirective,
+    currentStatus: impact.currentStatus ?? current.currentStatus,
+  };
+};
 
 const formatSimulatedLabel = (minutes: number) => {
   const cycle = Math.floor(minutes / 1440);
@@ -132,6 +210,7 @@ function App() {
   const [feedPaused, setFeedPaused] = useState(false);
   const [newsIntensity, setNewsIntensity] = useState<NewsIntensity>("normal");
   const [eventMemory, setEventMemory] = useState<EventMemory>({});
+  const [publicPulsePosts, setPublicPulsePosts] = useState<SocialPost[]>([]);
   const [sessionStartedAt] = useState(() => Date.now());
   const [exportPreview, setExportPreview] = useState<string | null>(null);
   const simulatedMinutesRef = useRef(219 * 1440 + 3 * 60 + 14);
@@ -167,7 +246,7 @@ function App() {
       const unicol = institutionsState.UNICOL;
       const psa = institutionsState.PSA;
       const institutionalAccess = (unicol.credibility + unicol.operationalCapacity + unicol.signalAccess) / 300;
-      const psaWeight = (psa.credibility + psa.enforcementCapacity + psa.publicTrust) / 300;
+      const psaWeight = (psa.credibility + psa.mandateIntegrity + psa.publicTrust + psa.enforcementCapacity * 0.6) / 360;
       let pricedInResponse = event.pricedInResponse;
       const notes: string[] = [];
 
@@ -176,7 +255,7 @@ function App() {
         for (const id of ["EXEX", "OPSEC", "PXB-X"] as MarketInstrumentId[]) {
           if (impacts[id] !== undefined) impacts[id] = Number((impacts[id]! * multiplier).toFixed(2));
         }
-        notes.push(`PSA directive weighted by credibility/enforcement (${Math.round(psaWeight * 100)}%).`);
+        notes.push(`PSA directive weighted by legal credibility/mandate (${Math.round(psaWeight * 100)}%).`);
       }
 
       if (tags.includes("unicol")) {
@@ -288,41 +367,49 @@ function App() {
     const activeEvent = timedEvent ? adjustEventForSimulation(timedEvent) : null;
     const rawReactionEvent = activeEvent ? generatePublicReactionEvent(activeEvent, recentEvents) : null;
     const reactionEvent = rawReactionEvent ? attachSimulatedTime(rawReactionEvent) : null;
+    const publicPulse = activeEvent
+      ? generateSocialPostsForEvent({
+          event: activeEvent,
+          market,
+          institutionsState,
+          recentPosts: publicPulsePosts,
+        })
+      : { posts: [], institutionImpacts: {} };
     const institutionEvents = activeEvent ? [activeEvent, ...(reactionEvent ? [reactionEvent] : [])] : [];
     const statusEvents: MarketEvent[] = [];
 
     if (activeEvent) {
       setEventMemory((current) => rememberEventTags(current, activeEvent));
+      if (publicPulse.posts.length) {
+        setPublicPulsePosts((current) =>
+          [...publicPulse.posts, ...current]
+            .filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index)
+            .slice(0, 90),
+        );
+      }
       setRecentEvents((current) =>
         [activeEvent, ...(reactionEvent ? [reactionEvent] : []), ...current.filter((item) => item.id !== activeEvent.id)]
           .filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index)
           .slice(0, 300),
       );
       setInstitutionsState((current) => {
-          const next = { ...current };
+        const next = { ...current };
 
         for (const generatedEvent of institutionEvents) {
           for (const institution of institutions) {
-            const impact = generatedEvent.institutionImpacts[institution.id];
-            if (!impact) continue;
-
-            next[institution.id] = {
-              ...next[institution.id],
-              credibility: clampMetric(next[institution.id].credibility + (impact.credibility ?? 0)),
-              operationalCapacity: clampMetric(
-                next[institution.id].operationalCapacity + (impact.operationalCapacity ?? 0),
-              ),
-              enforcementCapacity: clampMetric(
-                next[institution.id].enforcementCapacity + (impact.enforcementCapacity ?? 0),
-              ),
-              mandateIntegrity: clampMetric(next[institution.id].mandateIntegrity + (impact.mandateIntegrity ?? 0)),
-              publicTrust: clampMetric(next[institution.id].publicTrust + (impact.publicTrust ?? 0)),
-              signalAccess: clampMetric(next[institution.id].signalAccess + (impact.signalAccess ?? 0)),
-              latestStatement: impact.latestStatement ?? next[institution.id].latestStatement,
-              recentDirective: impact.recentDirective ?? next[institution.id].recentDirective,
-              currentStatus: impact.currentStatus ?? next[institution.id].currentStatus,
-            };
+            next[institution.id] = applyInstitutionImpact(
+              next[institution.id],
+              institution.id,
+              generatedEvent.institutionImpacts[institution.id] ?? {},
+            );
           }
+        }
+
+        for (const institution of institutions) {
+          const impact = publicPulse.institutionImpacts[institution.id];
+          if (!impact) continue;
+
+          next[institution.id] = applyInstitutionImpact(next[institution.id], institution.id, impact);
         }
 
         return next;
@@ -477,7 +564,17 @@ function App() {
 
       return nextMarket;
     });
-  }, [adjustEventForSimulation, attachSimulatedTime, eventMemory, marketRegime, recentEvents, sessionStartedAt]);
+  }, [
+    adjustEventForSimulation,
+    attachSimulatedTime,
+    eventMemory,
+    institutionsState,
+    market,
+    marketRegime,
+    publicPulsePosts,
+    recentEvents,
+    sessionStartedAt,
+  ]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -593,7 +690,15 @@ function App() {
   };
 
   const exportMarkdown = (exportMode: MarketExportMode = "clean") => {
-    const markdown = exportSessionMarkdown({ market, institutionsState, events: recentEvents, marketStatus, marketRegime, exportMode });
+    const markdown = exportSessionMarkdown({
+      market,
+      institutionsState,
+      events: recentEvents,
+      publicPulsePosts,
+      marketStatus,
+      marketRegime,
+      exportMode,
+    });
     setExportPreview(markdown);
     copyText(markdown);
   };
@@ -606,6 +711,7 @@ function App() {
             market,
             institutionsState,
             events: recentEvents,
+            publicPulsePosts,
             marketStatus,
             marketRegime,
             exportMode: format === "debug-md" ? "debug" : "clean",
@@ -620,6 +726,7 @@ function App() {
               market,
               institutions: institutionsState,
               events: recentEvents,
+              publicPulse: publicPulsePosts,
             },
             null,
             2,
@@ -755,7 +862,12 @@ function App() {
           onOpenDocument={openDocument}
         />
       ) : activeView === "media" ? (
-        <MediaFeed recentEvents={recentEvents} onOpenDocument={openDocument} onSelectInstrument={openInstrument} />
+        <MediaFeed
+          recentEvents={recentEvents}
+          publicPulsePosts={publicPulsePosts}
+          onOpenDocument={openDocument}
+          onSelectInstrument={openInstrument}
+        />
       ) : (
         <DocumentViewer
           documents={codexDocuments}
