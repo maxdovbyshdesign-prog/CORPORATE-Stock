@@ -77,6 +77,16 @@ const cleanPublicReactions = [
   "They called it a routing error like people are parcels.",
   "Carbon Standard discovered safety concerns right when Proxima fuel became competitive. Amazing timing.",
   "Shipping delay, legal review, observer access denied. Same sentence, different quarter.",
+  "Risk remained priced but unresolved, which is apparently the calm version.",
+  "The tape narrowed. Nobody on the ground did.",
+  "A corridor can be open, conditional, and unusable in the same paragraph.",
+  "Every statement says temporary like that helps the people waiting.",
+  "Verification arrived before protection again.",
+  "Desks held prior assumptions because the crisis learned to repeat itself.",
+  "The market no longer prices surprise, only duration.",
+  "Counsel has become a weather system.",
+  "They did not solve the route. They renamed the delay.",
+  "Observer access is not enforcement, but it is no longer nothing.",
 ];
 
 const sanitizePublicReaction = (value: string) => {
