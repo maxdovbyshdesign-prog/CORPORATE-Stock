@@ -1,6 +1,7 @@
 import { getInstitution, getMarketInstrument, institutions, marketInstruments, type EntityId, type InstitutionId, type MarketInstrumentId } from "../data/entities";
 import type { EventCategory, EventTag, InstitutionImpact, MarketEvent } from "../data/events";
 import { places, type GeneratedNewsCategory } from "../data/newsTemplates";
+import { deriveActiveWorldStateModifier, worldStateModifierBiasFor } from "../data/worldStateModifiers";
 import type { InstitutionState, MarketState } from "../App";
 import type { MarketRegime } from "../lib/marketModel";
 import type { NewsIntensity } from "../lib/newsEngine";
@@ -102,6 +103,9 @@ type DirectorCandidate = {
   notes: string[];
   rejections: string[];
   softGated: boolean;
+  worldModifierBiasScore: number;
+  worldModifierNotes: string[];
+  worldModifierBiasMaterial: boolean;
   forcedFallback?: boolean;
 };
 
@@ -839,6 +843,11 @@ const scoreNovelty = (archetype: EventArchetype, recentEvents: MarketEvent[]) =>
 
 const chooseCandidate = (context: EventDirectorContext) => {
   const pressures = computeDirectorPressures(context);
+  const activeWorldModifier = deriveActiveWorldStateModifier({
+    recentEvents: context.recentEvents,
+    marketRegime: context.marketRegime,
+    psaEnforcementCapacity: context.institutionsState.PSA.enforcementCapacity,
+  });
   const intensityBoost = context.intensity === "high" ? 0.12 : context.intensity === "low" ? -0.08 : 0;
   const ambientStreak = countConsecutiveSemantic(context.recentEvents, "MARKET:ambient_note");
   const relaxedNoveltyFloor = ambientStreak >= 3 ? 0.18 : 0.45;
@@ -876,6 +885,10 @@ const chooseCandidate = (context: EventDirectorContext) => {
         beneficiaryCooldownHit >= 2 ? `Rejected ${archetype.semanticPattern} due to repeated beneficiary pattern.` : "",
       ].filter(Boolean);
       const softGated = noveltyScore >= 0.45 && noveltyScore < 0.7;
+      const worldModifierBias = worldStateModifierBiasFor(activeWorldModifier, {
+        semanticPattern: archetype.semanticPattern,
+        tags: archetype.outputTags,
+      });
       const score =
         pressureScore * 0.64 +
         noveltyScore * 0.42 +
@@ -883,7 +896,8 @@ const chooseCandidate = (context: EventDirectorContext) => {
         semanticCooldownHit * 0.34 -
         actorActionCooldownHit * 0.24 -
         publicFamilyCooldownHit * 0.12 -
-        beneficiaryCooldownHit * 0.1;
+        beneficiaryCooldownHit * 0.1 +
+        worldModifierBias.score;
       return {
         archetype,
         noveltyScore,
@@ -892,6 +906,9 @@ const chooseCandidate = (context: EventDirectorContext) => {
         notes,
         rejections: isAmbient && ambientStreak >= 2 ? [...rejections, `Ambient duplicate pressure active after ${ambientStreak} consecutive fallback notes.`] : rejections,
         softGated,
+        worldModifierBiasScore: worldModifierBias.score,
+        worldModifierNotes: worldModifierBias.notes,
+        worldModifierBiasMaterial: worldModifierBias.material,
       };
     })
     .sort((a, b) => b.score - a.score);
@@ -913,7 +930,7 @@ const chooseCandidate = (context: EventDirectorContext) => {
   const suppressed = allCandidates
     .filter((candidate) => candidate.rejections.length > 0 && candidate.archetype.semanticPattern !== selected.archetype.semanticPattern)
     .slice(0, 8);
-  return { selected, pressures, suppressed, ambientStreak };
+  return { selected, pressures, suppressed, ambientStreak, activeWorldModifier };
 };
 
 const publicReactions: Record<string, string[]> = {
@@ -1033,7 +1050,7 @@ export const createDirectedMarketEvent = (context: EventDirectorContext): Market
   const result = chooseCandidate(context);
   if (!result) return null;
 
-  const { selected, pressures, suppressed, ambientStreak } = result;
+  const { selected, pressures, suppressed, ambientStreak, activeWorldModifier } = result;
   const { archetype } = selected;
   const pressureScore = pressureFor(archetype, pressures);
   const { numeric, eventSeverity } = severityFor(archetype.baseSeverity, context.intensity, pressureScore);
@@ -1079,6 +1096,8 @@ export const createDirectedMarketEvent = (context: EventDirectorContext): Market
   const rejectionNotes = suppressed.flatMap((candidate) => candidate.rejections).slice(0, 4);
   const directorNotes = [
     `Director selected ${archetype.semanticPattern} from top pressures: ${topPressureLines(pressures).join(", ")}.`,
+    activeWorldModifier ? `World modifier active: ${activeWorldModifier.modifier.title}.` : "",
+    ...selected.worldModifierNotes,
     ...rejectionNotes,
     rejectionNotes.length ? `Selected alternate ${archetype.semanticPattern}.` : "",
     selected.softGated ? `Selected ${archetype.semanticPattern} as a reduced-impact soft-gated candidate at novelty ${selected.noveltyScore.toFixed(2)}.` : "",
@@ -1113,6 +1132,8 @@ export const createDirectedMarketEvent = (context: EventDirectorContext): Market
     phase: phaseFor(archetype.outputTags, categoryMap[archetype.category]),
     semanticPattern: archetype.semanticPattern,
     noveltyScore: selected.noveltyScore,
+    worldModifierId: activeWorldModifier && selected.worldModifierBiasMaterial ? activeWorldModifier.modifier.id : undefined,
+    worldModifierTitle: activeWorldModifier && selected.worldModifierBiasMaterial ? activeWorldModifier.modifier.title : undefined,
     marketStateNote,
     directorNotes,
   };
